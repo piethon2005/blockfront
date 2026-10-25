@@ -13,7 +13,7 @@
 
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { OUTPOST_POSITIONS } from '../config.js';
+import { OUTPOST_POSITIONS, WORLD, arenaScale, scalePoint } from '../config.js';
 import {
   SURFACE_DEFINITIONS, applyWindSway, applyWorldUVs, getGlowMaterial, getPlainMaterial, getSurfaceMaterial,
 } from './materials.js';
@@ -291,26 +291,237 @@ export class StructureBuilder {
     }
   }
 
+  // ------------------------------------------------------------------ battlefield pieces (FRONTLINE)
+  /** Waist-high sandbag wall (crouch to hide, stand to shoot over). */
+  sandbagWall(x, z, length, alongX, { height = 1.5 } = {}) {
+    const cellSize = 0.5;
+    const cellsLong = Math.round(length / cellSize);
+    return this.voxelBlock(x, z, alongX ? length : 1, height, alongX ? 1 : length, 0xb59a6a, {
+      material: 'sandbag',
+      cellSize,
+      // Staggered courses with slightly varied bag colours.
+      colorAt: (i, j, k) => {
+        const along = alongX ? i : k;
+        const shade = ((along + j * 3) * 2654435761) % 7;
+        return [0xb59a6a, 0xa88d5e, 0xbfa678, 0x9e855a, 0xb09363, 0xc2aa7c, 0xa38a5f][shade];
+      },
+      isSolidAt: (i, j, k) => {
+        const along = alongX ? i : k;
+        // Firing notches along the top course.
+        return !(j === Math.round(height / cellSize) - 1 && along % 6 === 3 && along > 0 && along < cellsLong - 1);
+      },
+    });
+  }
+
+  /** A trench line: segments of sandbag wall with gaps to run through, plus barbed wire in front. */
+  trenchLine(z, halfWidth, facing) {
+    const segment = 16;
+    const gap = 5;
+    for (let start = -halfWidth; start + segment <= halfWidth; start += segment + gap) {
+      this.sandbagWall(start + segment / 2, z, segment, true);
+      // Duckboards behind the wall.
+      this.decorBox(start + segment / 2, 0.06, z - facing * 1.4, segment, 0.1, 1.6, getSurfaceMaterial('planks', 0x6a5236), { castShadow: false });
+      this.barbedWire(start + segment / 2, z + facing * 7, segment - 2);
+    }
+  }
+
+  /** Barbed-wire entanglement (decor only: posts and sagging coils). */
+  barbedWire(x, z, length) {
+    const postMaterial = getSurfaceMaterial('planks', 0x4a3a28);
+    const wireMaterial = getPlainMaterial(0x6e6a62, { roughness: 0.35, metalness: 0.9 });
+    const posts = Math.max(2, Math.round(length / 3));
+    for (let post = 0; post <= posts; post++) {
+      const postX = x - length / 2 + (post / posts) * length;
+      const lean = (this.random() - 0.5) * 0.3;
+      const geometry = new THREE.BoxGeometry(0.12, 1.3, 0.12).rotateZ(lean).translate(postX, 0.6, z);
+      this.addToBucket(geometry, postMaterial, true);
+      if (post === posts) continue;
+      for (const [height, sag] of [[0.35, 0.08], [0.75, 0.12], [1.1, 0.06]]) {
+        const span = length / posts;
+        const wire = new THREE.BoxGeometry(span, 0.03, 0.03).rotateY((this.random() - 0.5) * 0.25).translate(postX + span / 2, height - sag, z + (this.random() - 0.5) * 0.3);
+        this.addToBucket(wire, wireMaterial, false);
+      }
+      // Coiled loops between posts.
+      for (let loop = 0; loop < 3; loop++) {
+        const ring = new THREE.TorusGeometry(0.32, 0.02, 4, 10).rotateY(Math.PI / 2 + (this.random() - 0.5) * 0.6)
+          .translate(postX + (loop + 0.5) * (length / posts / 3), 0.4 + this.random() * 0.15, z);
+        this.addToBucket(ring, wireMaterial, false);
+      }
+    }
+  }
+
+  /** Concrete bunker with firing slits and a rear doorway. facing: +1 = slits look toward +Z. */
+  bunker(x, z, facing) {
+    const frontK = facing > 0 ? 7 : 0;
+    const backK = facing > 0 ? 0 : 7;
+    this.decorBox(x, 0.05, z, 11, 0.1, 9, getSurfaceMaterial('concrete', 0x7a786e), { castShadow: false, unitsPerTile: 4 });
+    return this.voxelBlock(x, z, 10, 4, 8, 0x8e8b80, {
+      material: 'concrete',
+      cellSize: 1,
+      isSolidAt: (i, j, k) => {
+        if (j === 3) return true;                                                      // thick roof
+        const isShell = i === 0 || i === 9 || k === 0 || k === 7;
+        if (!isShell) return false;
+        if (k === frontK && j === 2 && i >= 2 && i <= 7) return false;                 // wide firing slit
+        if ((i === 0 || i === 9) && j === 2 && k >= 3 && k <= 4) return false;         // side slits
+        if (k === backK && i >= 4 && i <= 5 && j <= 1) return false;                   // doorway
+        return true;
+      },
+      colorAt: (i, j) => (j === 3 ? 0x6e6c62 : null),
+    });
+  }
+
+  /** Burnt-out tank: one destructible metal voxel structure (hull, turret, barrel). */
+  tankWreck(x, z, alongX) {
+    const cellSize = 0.5;
+    const long = 16;   // 8 m
+    const wide = 8;    // 4 m
+    const hullColor = 0x3d4232;
+    this.decorBox(x, 0.03, z, alongX ? 10 : 6, 0.05, alongX ? 6 : 10, getPlainMaterial(0x1d1a16, { roughness: 1 }), { castShadow: false }); // scorch mark
+    this.tankBarrel(x, z, alongX);
+    return this.voxelBlock(x, z, (alongX ? long : wide) * cellSize, 3.5, (alongX ? wide : long) * cellSize, hullColor, {
+      material: 'metal',
+      cellSize,
+      isSolidAt: (i, j, k) => {
+        const a = alongX ? i : k;     // along the hull
+        const b = alongX ? k : i;     // across the hull
+        if (j <= 1) return (b <= 1 || b >= wide - 2) || (j === 1 && a > 0 && a < long - 1);   // tracks + lower hull
+        if (j <= 3) return a > 0 && a < long - 1 && !(j === 3 && (a === 1 || a === long - 2));
+        if (j <= 5) return a >= 5 && a <= 10 && b >= 2 && b <= wide - 3;                       // turret
+        if (j === 6) return a >= 6 && a <= 9 && b >= 3 && b <= wide - 4 && !(a === 7);          // hatch ring
+        return false;
+      },
+      colorAt: (i, j, k) => {
+        const a = alongX ? i : k;
+        const b = alongX ? k : i;
+        if (j <= 1 && (b <= 1 || b >= wide - 2)) return 0x1e1f1b;                             // tracks
+        if ((a + b + j) % 5 === 0) return 0x24261f;                                           // soot streaks
+        return a % 7 === 2 && j === 3 ? 0x6a3a22 : null;                                      // rust
+      },
+    });
+  }
+
+  /** The gun barrel sticks out of the turret (decor, so it never floats on its own). */
+  tankBarrel(x, z, alongX) {
+    const material = getPlainMaterial(0x2c2f26, { roughness: 0.6, metalness: 0.6 });
+    const geometry = new THREE.BoxGeometry(alongX ? 4.2 : 0.35, 0.35, alongX ? 0.35 : 4.2);
+    geometry.rotateX(alongX ? 0 : -0.12).rotateZ(alongX ? 0.12 : 0);
+    geometry.translate(x + (alongX ? 3.6 : 0), 2.65, z + (alongX ? 0 : 3.6));
+    this.addToBucket(geometry, material, true);
+  }
+
+  /** A house that has already taken shell hits: holes, missing roof sections, rubble at its feet. */
+  ruinedHouse(x, z, wallColor, seed) {
+    let state = seed * 9301 + 49297;
+    const random = () => ((state = (state * 9301 + 49297) % 233280) / 233280);
+    const holes = Array.from({ length: 4 }, () => [Math.floor(random() * 9), Math.floor(random() * 6), Math.floor(random() * 8), 1 + Math.floor(random() * 2)]);
+    const roofGone = random() > 0.4;
+    const frontK = z > 0 ? 0 : 7;
+    this.decorBox(x, 0.04, z, 9.8, 0.08, 8.8, getSurfaceMaterial('concrete', 0x8a8a84), { unitsPerTile: 4, castShadow: false });
+    this.voxelBlock(x, z, 9, 7, 8, wallColor, {
+      material: random() > 0.5 ? 'brick' : 'plaster',
+      cellSize: 1,
+      isSolidAt: (i, j, k) => {
+        for (const [holeI, holeJ, holeK, radius] of holes) {
+          if (Math.abs(i - holeI) + Math.abs(j - holeJ) + Math.abs(k - holeK) <= radius && j >= 1) return false;
+        }
+        if (j <= 5) {
+          const isShell = i === 0 || i === 8 || k === 0 || k === 7;
+          if (!isShell) return false;
+          if (k === frontK && i >= 3 && i <= 5 && j <= 2) return false;
+          if (k === frontK && j === 3 && (i === 1 || i === 2 || i === 6 || i === 7)) return false;
+          if ((i === 0 || i === 8) && j === 3 && (k === 3 || k === 4)) return false;
+          return true;
+        }
+        if (roofGone) return (i + k) % 3 === 0 && i > 0 && i < 8 && k > 0 && k < 7 ? false : i <= 3;   // half the roof collapsed
+        return true;
+      },
+      colorAt: (i, j) => (j >= 6 ? 0x5a3a24 : (i + j) % 6 === 0 ? 0x3a3530 : null),   // scorched patches
+    });
+    this.rubble(x + (random() - 0.5) * 8, z + (z > 0 ? -6 : 6), 0x7a5a4a);
+  }
+
+  /** Low heap of broken masonry. */
+  rubble(x, z, color) {
+    return this.voxelBlock(x, z, 3, 1, 2, color, {
+      material: 'brick',
+      cellSize: 0.5,
+      isSolidAt: (i, j, k) => j === 0 || (j === 1 && (i + k) % 2 === 0 && i > 0 && i < 5),
+    });
+  }
+
+  /** Village church with a bell tower: a big destructible landmark in the middle of the battlefield. */
+  church(x, z) {
+    this.decorBox(x, 0.05, z, 20, 0.1, 13, getSurfaceMaterial('concrete', 0x8a867a), { castShadow: false, unitsPerTile: 4 });
+    // Nave: long hollow hall with tall windows and doors at both ends.
+    this.voxelBlock(x, z, 16, 8, 10, 0xd8ccb0, {
+      material: 'plaster',
+      cellSize: 1,
+      isSolidAt: (i, j, k) => {
+        if (j === 7) return i % 4 !== 1;                                                 // shell-holed roof
+        const isShell = i === 0 || i === 15 || k === 0 || k === 9;
+        if (!isShell) return false;
+        if ((i === 0 || i === 15) && k >= 4 && k <= 5 && j <= 3) return false;           // doors
+        if ((k === 0 || k === 9) && i % 3 === 1 && j >= 3 && j <= 5) return false;        // tall windows
+        return true;
+      },
+      colorAt: (i, j) => (j === 7 ? 0x6a4030 : (i + j) % 7 === 0 ? 0xb8ac90 : null),
+    });
+    // Bell tower: tall hollow shaft with belfry openings.
+    this.voxelBlock(x + 10, z, 4, 16, 4, 0xcfc2a4, {
+      material: 'brick',
+      cellSize: 1,
+      isSolidAt: (i, j, k) => {
+        const isShell = i === 0 || i === 3 || k === 0 || k === 3;
+        if (j === 15) return true;
+        if (!isShell) return false;
+        if (j >= 12 && j <= 13 && (i === 1 || i === 2 || k === 1 || k === 2)) return false; // belfry arches
+        if (i === 0 && (k === 1 || k === 2) && j <= 2) return false;                        // doorway
+        return true;
+      },
+      colorAt: (i, j) => (j === 15 ? 0x5a3424 : null),
+    });
+    this.decorBox(x + 10, 16.6, z, 0.25, 1.4, 0.25, getPlainMaterial(0x2a2a2a, { metalness: 0.8, roughness: 0.4 }));   // cross
+    this.decorBox(x + 10, 16.9, z, 0.9, 0.22, 0.25, getPlainMaterial(0x2a2a2a, { metalness: 0.8, roughness: 0.4 }));
+  }
+
+  /** Shell crater: dark scorched disc with a raised earth rim (decor). */
+  crater(x, z, radius) {
+    const scorch = new THREE.CylinderGeometry(radius, radius * 1.05, 0.06, 18).translate(x, 0.03, z);
+    this.addToBucket(scorch, getPlainMaterial(0x2e261c, { roughness: 1 }), false);
+    const rim = new THREE.TorusGeometry(radius * 1.05, radius * 0.18, 4, 18).rotateX(Math.PI / 2).scale(1, 1, 0.35).translate(x, 0.08, z);
+    this.addToBucket(rim, getPlainMaterial(0x5a4a32, { roughness: 1, flatShading: true }), false);
+  }
+
+  /** Muddy patch to break up the grass (decor). */
+  mudPatch(x, z, radius) {
+    const geometry = new THREE.CircleGeometry(radius, 16).rotateX(-Math.PI / 2).translate(x, 0.015, z);
+    this.addToBucket(geometry, getPlainMaterial(0x5e4e34, { roughness: 1 }), false);
+  }
+
   // ------------------------------------------------------------------ layout helpers
   /** Outposts, scattered crates, extra trees and the perimeter walls shared by every map. */
   buildVerticalLayer(wallColor) {
     let seed = 7;
     const seededRandom = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
-    const arena = 112;
-    const isFreeSpot = (x, z) => !(Math.abs(x) < 60 && Math.abs(z) < 60)
-      && !(Math.abs(z) > 88 && Math.abs(x) < 32)
-      && !OUTPOST_POSITIONS.some(([outpostX, outpostZ]) => Math.hypot(outpostX - x, outpostZ - z) < 24);
+    const arena = WORLD.arenaHalfSize;
+    const scale = arenaScale();
+    const outposts = OUTPOST_POSITIONS.map(scalePoint);
+    const isFreeSpot = (x, z) => !(Math.abs(x) < 60 * scale && Math.abs(z) < 60 * scale)
+      && !(Math.abs(z) > arena - 24 * scale && Math.abs(x) < 50 * scale)          // keep spawn zones clear
+      && !outposts.some(([outpostX, outpostZ]) => Math.hypot(outpostX - x, outpostZ - z) < 24)
+      && !this.physics.isPointBlocked(x, z, 3);
 
-    OUTPOST_POSITIONS.forEach(([x, z]) => this.outpost(x, z));
+    outposts.forEach(([x, z]) => this.outpost(x, z));
 
     const crateColors = [0xb98a4a, 0x4a8ab9, 0xb94a4a];
-    for (let index = 0; index < 46; index++) {
+    for (let index = 0; index < Math.round(46 * scale * scale); index++) {
       const x = (seededRandom() * 2 - 1) * (arena - 8);
       const z = (seededRandom() * 2 - 1) * (arena - 8);
       const size = 2 + seededRandom() * 1.5;
       if (isFreeSpot(x, z)) this.crate(x, z, size, size, crateColors[index % 3]);
     }
-    for (let index = 0; index < 18; index++) {
+    for (let index = 0; index < Math.round(18 * scale * scale); index++) {
       const x = (seededRandom() * 2 - 1) * (arena - 8);
       const z = (seededRandom() * 2 - 1) * (arena - 8);
       if (isFreeSpot(x, z)) this.tree(x, z, 1.2);
@@ -327,13 +538,13 @@ export class StructureBuilder {
   buildScenery(outerTreeCount) {
     for (let index = 0; index < outerTreeCount; index++) {
       const angle = this.random() * Math.PI * 2;
-      const distance = 122 + this.random() * 110;
+      const distance = WORLD.arenaHalfSize + 10 + this.random() * 110;
       this.tree(Math.cos(angle) * distance, Math.sin(angle) * distance, 1.1 + this.random() * 0.9, { collides: false });
     }
     const mountainColors = [0x5f8f6a, 0x6f9a78, 0x56806a, 0x7a9a82];
     for (let index = 0; index < 34; index++) {
       const angle = (index / 34) * Math.PI * 2 + this.random() * 0.15;
-      const distance = 300 + this.random() * 220;
+      const distance = WORLD.arenaHalfSize * 2.7 + this.random() * 220;
       const height = 50 + this.random() * 110;
       this.mountain(Math.cos(angle) * distance, Math.sin(angle) * distance, 50 + this.random() * 60, height, mountainColors[index % 4], height > 120);
     }

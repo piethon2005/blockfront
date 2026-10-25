@@ -585,7 +585,17 @@ export class AudioManager {
     events.on('flashlight:toggle', () => this.play('flashlight_click'));
     events.on('player:death', () => this.play('death'));
     events.on('player:respawn', () => this.play('respawn'));
-    events.on('bot:fire', ({ origin, sound }) => this.play(sound && this.recipes[sound] ? sound : 'shot_ak47', { position: origin, volume: 0.8 }));
+    events.on('bot:fire', ({ origin, sound, silent }) => {
+      if (!silent) this.play(sound && this.recipes[sound] ? sound : 'shot_ak47', { position: origin, volume: 0.8 });
+    });
+    events.on('bot:dash', ({ position }) => this.play('dash', { position, volume: 0.7 }));
+    events.on('bot:teleport', ({ from, to }) => {
+      this.play('teleport', { position: from });
+      this.play('teleport', { position: to });
+    });
+    events.on('bot:ability', ({ id, position }) => this.play(id === 'propHunt' || id === 'ambush' ? 'prop_transform' : 'hyperspeed', { position }));
+    events.on('ambience:artillery', ({ position, delay }) => setTimeout(() => this.play('artillery', { position }), delay * 1000));
+    events.on('ambience:jet', ({ position }) => this.play('jet_flyby', { position }));
     events.on('bot:death', ({ position }) => this.play('shatter', { position: { x: position.x, y: 1.5, z: position.z } }));
     events.on('hit:confirm', ({ isKill, isHeadshot }) => this.play(isKill ? 'kill' : isHeadshot ? 'headshot' : 'hitmarker'));
     events.on('bullet:whiz', ({ position }) => this.play('whiz', { position }));
@@ -756,8 +766,8 @@ const SOUND_RECIPES = {
     this.noise({ start, duration: 0.14, destination: output, filterType: 'lowpass', frequency: 700, gain: 0.25 + intensity * 0.3 });
   },
 
-  dash(start) {
-    const output = this.createOutput({ reverb: 0.1, lifetime: 0.6 });
+  dash(start, { position = null, volume = 1 } = {}) {
+    const output = this.createOutput({ position, volume, reverb: 0.1, lifetime: 0.6 });
     this.noise({ start, duration: 0.32, destination: output, frequency: 450, frequencyEnd: 3000, q: 1.6, gain: 0.45, attack: 0.05 });
     this.noise({ start: start + 0.08, duration: 0.25, destination: output, frequency: 3200, frequencyEnd: 600, q: 1.2, gain: 0.2, attack: 0.04 });
     this.tone({ start, duration: 0.25, destination: output, frequency: 160, frequencyEnd: 90, gain: 0.15 });
@@ -1133,21 +1143,21 @@ const SOUND_RECIPES = {
     }
   },
 
-  teleport(start) {
-    const output = this.createOutput({ reverb: 0.45, lifetime: 1.2 });
+  teleport(start, { position = null } = {}) {
+    const output = this.createOutput({ position, reverb: 0.45, lifetime: 1.2 });
     this.tone({ start, duration: 0.35, destination: output, frequency: 220, frequencyEnd: 2600, gain: 0.25 });
     this.tone({ start: start + 0.05, duration: 0.4, destination: output, type: 'square', frequency: 1800, frequencyEnd: 300, gain: 0.05 });
     this.noise({ start, duration: 0.3, destination: output, frequency: 3000, frequencyEnd: 600, q: 2, gain: 0.3 });
   },
 
-  prop_transform(start) {
-    const output = this.createOutput({ reverb: 0.3, lifetime: 1 });
+  prop_transform(start, { position = null } = {}) {
+    const output = this.createOutput({ position, reverb: 0.3, lifetime: 1 });
     this.noise({ start, duration: 0.4, destination: output, filterType: 'lowpass', frequency: 2400, frequencyEnd: 300, gain: 0.4 }); // poof
     this.tone({ start: start + 0.05, duration: 0.3, destination: output, type: 'triangle', frequency: 520, frequencyEnd: 1040, gain: 0.12 });
   },
 
-  hyperspeed(start) {
-    const output = this.createOutput({ reverb: 0.2, lifetime: 1.5 });
+  hyperspeed(start, { position = null } = {}) {
+    const output = this.createOutput({ position, reverb: 0.2, lifetime: 1.5 });
     this.noise({ start, duration: 1.0, destination: output, frequency: 400, frequencyEnd: 4000, q: 1, gain: 0.4, attack: 0.3 });
     this.tone({ start, duration: 0.9, destination: output, type: 'sawtooth', frequency: 90, frequencyEnd: 360, gain: 0.08, attack: 0.2 });
   },
@@ -1199,6 +1209,23 @@ const SOUND_RECIPES = {
     const output = this.createOutput({ reverb: 0.6, lifetime: 3 });
     this.tone({ start, duration: 2.4, destination: output, type: 'sawtooth', frequency: 320, frequencyEnd: 520, gain: 0.05, attack: 0.8, release: 0.8 }); // siren swell
     this.noise({ start, duration: 2.6, destination: output, filterType: 'lowpass', frequency: 300, frequencyEnd: 900, gain: 0.25, attack: 1.2 });
+  },
+
+  /** Far-off artillery: a dull thump and a long rolling rumble. */
+  artillery(start, { position = null } = {}) {
+    const output = this.createOutput({ position, reverb: 0.95, volume: 1.6, lifetime: 5 });
+    this.tone({ start, duration: 1.8, destination: output, frequency: 52, frequencyEnd: 24, gain: 1.2, attack: 0.02 });
+    this.noise({ start, duration: 2.8, destination: output, filterType: 'lowpass', frequency: 420, frequencyEnd: 60, gain: 1.1, attack: 0.03 });
+    this.noise({ start: start + 0.25, duration: 2.2, destination: output, filterType: 'lowpass', frequency: 260, frequencyEnd: 50, gain: 0.5, attack: 0.3 });
+  },
+
+  /** Fighter jet pass: rising roar, peak, then a falling rumble. */
+  jet_flyby(start, { position = null } = {}) {
+    const output = this.createOutput({ position, reverb: 0.6, volume: 1.4, lifetime: 7 });
+    this.noise({ start, duration: 5.5, destination: output, filterType: 'bandpass', frequency: 500, frequencyEnd: 160, q: 0.6, gain: 0.9, attack: 2.2 });
+    this.noise({ start: start + 0.4, duration: 4.4, destination: output, filterType: 'highpass', frequency: 3600, frequencyEnd: 900, gain: 0.25, attack: 1.8 });
+    this.tone({ start: start + 0.5, duration: 4.5, destination: output, type: 'sawtooth', frequency: 190, frequencyEnd: 70, gain: 0.05, attack: 1.8 });
+    this.tone({ start: start + 1, duration: 4.5, destination: output, frequency: 48, frequencyEnd: 30, gain: 0.5, attack: 1.4 });
   },
 
   thunder(start) {

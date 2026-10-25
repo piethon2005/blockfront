@@ -8,7 +8,7 @@
 // =====================================================================
 
 import * as THREE from 'three';
-import { LOOT, PLAYER, WEAPONS, WORLD } from '../config.js';
+import { arenaScale, LOOT, PLAYER, WEAPONS, WORLD } from '../config.js';
 import { events } from '../core/events.js';
 import { buildWeaponModel } from '../entities/weapon.js';
 import { createWeaponItem } from '../entities/inventory.js';
@@ -98,7 +98,13 @@ export class LootManager {
     this.respawnTimer = LOOT.worldRespawnInterval;
     this.elapsed = 0;
     this.nextItemId = 1;
-    events.on('bot:death', ({ bot, position }) => netState.isAuthority && !(bot && bot.isRemotePlayer) && this.dropFromBot(position));
+    events.on('bot:death', ({ bot, position }) => netState.isAuthority && !(bot && bot.isRemotePlayer) && this.dropFromBot(position, bot && bot.weaponId));
+  }
+
+  /** World loot scales with map area. */
+  get worldItemTarget() {
+    const scale = arenaScale();
+    return Math.round(LOOT.worldItemCount * scale * scale);
   }
 
   /** Plain data for the network. */
@@ -136,7 +142,7 @@ export class LootManager {
   build() {
     this.clear();
     if (!netState.isAuthority) return; // guests receive the host's items
-    for (let index = 0; index < LOOT.worldItemCount; index++) this.spawnRandomWorldItem();
+    for (let index = 0; index < this.worldItemTarget; index++) this.spawnRandomWorldItem();
     this.respawnTimer = LOOT.worldRespawnInterval;
   }
 
@@ -279,11 +285,12 @@ export class LootManager {
     return item;
   }
 
-  dropFromBot(position) {
+  /** A bot went down: maybe drop the gun it was carrying, or a consumable. */
+  dropFromBot(position, carriedWeaponId = null) {
     if (Math.random() > LOOT.botDropChance) return;
     const dropPosition = new THREE.Vector3(position.x, 0, position.z);
     if (Math.random() < LOOT.botWeaponDropChance) {
-      const weaponId = LOOT.botDropWeapons[Math.floor(Math.random() * LOOT.botDropWeapons.length)];
+      const weaponId = carriedWeaponId && WEAPONS[carriedWeaponId] ? carriedWeaponId : LOOT.botDropWeapons[Math.floor(Math.random() * LOOT.botDropWeapons.length)];
       const definition = WEAPONS[weaponId];
       const partialMagazine = Math.max(1, Math.floor(definition.magazineSize * (0.4 + Math.random() * 0.6)));
       this.spawnItem({ kind: 'weapon', weaponItem: createWeaponItem(weaponId, partialMagazine, definition.magazineSize), position: dropPosition });
@@ -412,7 +419,7 @@ export class LootManager {
     if (this.respawnTimer <= 0) {
       this.respawnTimer = LOOT.worldRespawnInterval;
       const worldCount = this.items.filter((item) => item.isWorld).length;
-      if (worldCount < LOOT.worldItemCount) this.spawnRandomWorldItem();
+      if (worldCount < this.worldItemTarget) this.spawnRandomWorldItem();
     }
   }
 }

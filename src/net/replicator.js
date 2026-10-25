@@ -18,7 +18,8 @@
 // =====================================================================
 
 import * as THREE from 'three';
-import { BOT, MATCH, WEAPONS } from '../config.js';
+import { BOT, BOT_WEAPON_IDS, MATCH, WEAPONS } from '../config.js';
+import { BOT_ABILITY_IDS } from '../entities/bot.js';
 import { events } from '../core/events.js';
 import { netState } from './netState.js';
 
@@ -201,10 +202,14 @@ export class Replicator {
     onHost('barrel:state', ({ index, destroyed }) => forward('barrel', { index, destroyed }));
     onHost('explosion', ({ position, radius }) => forward('explosion', { p: vec(position), radius }));
     onHost('weather:start', ({ event }) => forward('weather', { id: event.id }));
-    onHost('bot:fire', ({ bot, origin, target, didHit }) => {
+    onHost('bot:fire', ({ bot, origin, target, didHit, silent }) => {
       if (bot.isPuppet) return;
-      this.send('all', { k: 'bf', n: bot.name, o: vec(origin), t: vec(target), h: didHit ? 1 : 0 });
+      this.send('all', { k: 'bf', n: bot.name, o: vec(origin), t: vec(target), h: didHit ? 1 : 0, s: silent ? 1 : 0 });
     });
+    // Bot moves everyone should see: dashes, teleports and donkey abilities.
+    onHost('bot:dash', ({ bot, direction }) => !bot.isPuppet && forward('botFx', { e: 'dash', n: bot.name, d: vec(direction) }));
+    onHost('bot:teleport', ({ bot, from, to }) => !bot.isPuppet && forward('botFx', { e: 'tp', n: bot.name, f: vec(from), t: vec(to) }));
+    onHost('bot:ability', ({ bot, id }) => !bot.isPuppet && forward('botFx', { e: 'ab', n: bot.name, id }));
     onHost('match:end', ({ scores, scoreLabel }) => {
       forward('end', { scores, scoreLabel });
       if (this.net) this.net.endMatch();
@@ -263,6 +268,7 @@ export class Replicator {
         s: round(player.horizontalSpeed || 0),
         f: player.timeSinceShot < 1.5 ? 1 : 0,
         pet: game.pet ? game.pet.netSnapshot() : null,
+        w: game.weapons.weapon ? game.weapons.weapon.id : null,
       });
     }
 
@@ -387,7 +393,7 @@ export class Replicator {
     if (avatar) {
       const [x, y, z, yaw] = data.p;
       // Avatars face +Z at rotation 0; a camera with yaw 0 looks down -Z.
-      avatar.applyNetState({ x, y, z, yaw: yaw + Math.PI, alive: !!data.a, engage: !!data.f, crouch: !!data.c, disguise: !!data.d });
+      avatar.applyNetState({ x, y, z, yaw: yaw + Math.PI, alive: !!data.a, engage: !!data.f, crouch: !!data.c, disguise: !!data.d, weaponId: data.w && WEAPONS[data.w] ? data.w : null });
       avatar.isGhosted = !!data.g;
       avatar.horizontalSpeed = data.s || 0;
       if (data.f) avatar.timeSinceShot = Math.min(avatar.timeSinceShot, 0.5);
@@ -403,9 +409,10 @@ export class Replicator {
     avatar.revealTimer = BOT.radarRevealTime;
     const definition = WEAPONS[data.w];
     const origin = toVector(data.o);
-    for (const end of data.e || []) {
-      events.emit('bot:fire', { bot: avatar, origin, target: toVector(end), didHit: false, sound: definition ? definition.sound : null, isRemoteHuman: true });
-    }
+    avatar.playShotRecoil();
+    (data.e || []).forEach((end, index) => {
+      events.emit('bot:fire', { bot: avatar, origin, target: toVector(end), didHit: false, sound: definition ? definition.sound : null, weaponId: data.w, silent: index > 0, isRemoteHuman: true });
+    });
     // Host: remote gunfire alerts nearby bots just like ours does.
     if (netState.isHost && !avatar.isGhosted) {
       for (const bot of this.game.bots) {
@@ -470,20 +477,30 @@ export class Replicator {
   onBotSnapshot(list) {
     if (!Array.isArray(list)) return;
     const byName = new Map(this.game.bots.map((bot) => [bot.name, bot]));
-    for (const [name, x, z, yaw, alive, engage] of list) {
+    for (const [name, x, z, yaw, alive, engage, weaponIndex = -1, effects = 0] of list) {
       const bot = byName.get(name);
-      if (bot) bot.applyNetState({ x, z, yaw, alive: !!alive, engage: !!engage });
+      if (!bot) continue;
+      const abilityIndex = effects >> 1;
+      bot.applyNetState({
+        x, z, yaw, alive: !!alive, engage: !!engage,
+        weaponId: BOT_WEAPON_IDS[weaponIndex] || null,
+        disguise: !!(effects & 1),
+        abilityId: abilityIndex > 0 ? BOT_ABILITY_IDS[abilityIndex - 1] : null,
+      });
     }
   }
 
-  onBotFire({ n, o, t, h }) {
+  onBotFire({ n, o, t, h, s }) {
     const bot = this.game.bots.find((candidate) => candidate.name === n);
     if (!bot) return;
     bot.revealTimer = BOT.radarRevealTime;
     bot.netEngage = true;
     const origin = toVector(o);
     const target = toVector(t);
-    events.emit('bot:fire', { bot, origin, target, didHit: !!h });
+    const definition = WEAPONS[bot.weaponId];
+    if (!s) bot.playShotRecoil();
+    events.emit('bot:fire', { bot, origin, target, didHit: !!h, weaponId: bot.weaponId, sound: definition ? definition.sound : null, silent: !!s });
+    if (s) return;
     const player = this.game.player;
     if (!h && player.isAlive && player.team !== bot.team) bot.checkWhiz(origin, target, origin.distanceTo(target), { player });
   }
@@ -528,6 +545,14 @@ export class Replicator {
       case 'barrel': game.hazards.applyState(data.index, data.destroyed); break;
       case 'explosion': events.emit('explosion', { position: toVector(data.p), radius: data.radius, byPlayer: false }); break;
       case 'weather': if (!game.weather.event) game.weather.start(data.id); break;
+      case 'botFx': {
+        const bot = game.bots.find((candidate) => candidate.name === data.n);
+        if (!bot) break;
+        if (data.e === 'dash') events.emit('bot:dash', { bot, position: bot.position.clone(), direction: toVector(data.d) });
+        else if (data.e === 'tp') events.emit('bot:teleport', { bot, from: toVector(data.f), to: toVector(data.t) });
+        else if (data.e === 'ab') events.emit('bot:ability', { bot, id: data.id, position: bot.position.clone() });
+        break;
+      }
       case 'end': game.onMatchEnd(data); break;
       default: break;
     }

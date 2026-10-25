@@ -136,7 +136,8 @@ export class MatchManager {
     this.tags.forEach((tag) => tag.dispose());
     this.tags = [];
     this.scores = { red: 0, blue: 0 };
-    this.timeRemaining = MATCH.durationSeconds;
+    this.duration = (this.mode && this.mode.durationSeconds) || MATCH.durationSeconds;
+    this.timeRemaining = this.duration;
     this.isOver = false;
     this.playerKills = 0;
     this.coins = 0;

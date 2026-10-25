@@ -6,7 +6,7 @@
 // =====================================================================
 
 import * as THREE from 'three';
-import { CTF, LOOT, PLAYER, PLAYER_TEAM, TRAITS } from '../config.js';
+import { arenaScale, CTF, LOOT, PLAYER, PLAYER_TEAM, TRAITS } from '../config.js';
 import { events } from '../core/events.js';
 
 export class Player {
@@ -244,7 +244,7 @@ export class Player {
     // `spawnJitter` (set for online matches) spreads human squadmates apart.
     const side = this.team === 'red' ? -1 : 1;
     const jitter = this.spawnJitter ? (Math.random() * 2 - 1) * this.spawnJitter : 0;
-    this.position.set(PLAYER.spawn.x + jitter, 0, PLAYER.spawn.z * side);
+    this.position.set(PLAYER.spawn.x + jitter, 0, PLAYER.spawn.z * arenaScale() * side);
     this.verticalVelocity = 0;
     this.isGrounded = true;
     this.yaw = side === 1 ? 0 : Math.PI;

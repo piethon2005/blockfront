@@ -5,7 +5,10 @@
 // =====================================================================
 
 export const WORLD = {
-  arenaHalfSize: 112,       // playable area is [-112, 112] on X and Z
+  // Playable area is [-arenaHalfSize, arenaHalfSize] on X and Z. Each map can override it
+  // (MAPS[].halfSize); the map builder writes the active value here before building.
+  arenaHalfSize: 112,
+  baseHalfSize: 112,        // size every layout number below was authored for
   stepHeight: 0.6,          // max ledge height the player/bots walk up without jumping
   bodyHeight: 1.8,          // collision height of a body
   bodyRadius: 0.45,         // collision radius of a body
@@ -14,6 +17,17 @@ export const WORLD = {
   terminalVelocity: 40,
   groundSnapDistance: 0.6,  // how far a grounded body is pulled down to stay glued to slopes
 };
+
+/** How much larger the active map is than the classic 112 m arena (1 = classic). */
+export function arenaScale() {
+  return WORLD.arenaHalfSize / WORLD.baseHalfSize;
+}
+
+/** Scale an authored [x, z] point to the active arena (depth scales fully, width a little). */
+export function scalePoint([x, z]) {
+  const scale = arenaScale();
+  return [x * (1 + (scale - 1) * 0.5), z * scale];
+}
 
 export const PLAYER = {
   spawn: { x: 0, z: 92 },
@@ -144,8 +158,8 @@ export const LOOT = {
   ammoBoxMagazines: 2,          // ammo boxes add this many magazines to every gun you hold
   worldWeaponPool: ['shotgun', 'm4', 'deagle', 'ak47', 'machete', 'pistol'],
   worldWeights: { ammo: 28, medkit: 24, armor1: 18, armor2: 7, weapon: 23 },
-  botDropChance: 0.8,           // chance an eliminated bot drops something
-  botWeaponDropChance: 0.35,    // ...and that the drop is its weapon
+  botDropChance: 0.55,          // chance an eliminated bot drops something
+  botWeaponDropChance: 0.4,     // ...and that the drop is the gun it was carrying
   botDropWeapons: ['ak47', 'm4', 'shotgun', 'deagle'],
   rarityColors: { common: 0xd8d8d8, uncommon: 0x6fdc4a, rare: 0x3aa0ff, elite: 0xffb21a },
 };
@@ -198,7 +212,15 @@ export const BOT = {
   missScatter: 3,
   damageToPlayer: 9,
   damageToBot: 14,
-  roamAreaHalfSize: 70,
+  roamAreaHalfSize: 70,         // scaled with the arena
+  targetSearchInterval: 0.14,   // seconds between full line-of-sight target searches (staggered per bot)
+  dashCooldownMin: 3.5,
+  dashCooldownJitter: 3,
+  dashDuration: 0.22,
+  dashSpeedMultiplier: 3.4,
+  donkeyHuntRange: 38,          // bots with no enemy in sight will chase a donkey this close
+  teleportCooldown: 4,
+  abilityIconHeight: 4.45,
   waypointTimeout: 6,
   tagSearchRadius: 70,
   ownTagWeight: 2,              // own-team tags are treated as twice as far (less attractive)
@@ -208,6 +230,30 @@ export const BOT = {
   whizRadius: 2.5,              // missed shots this close to the player play a bullet whiz
 };
 
+// Bot weapons: every bot carries one of these (real models, sounds and handling).
+//   burst: rounds per trigger pull · shotInterval: gap inside a burst · pause*: gap between bursts
+//   accuracy: hit-chance multiplier · falloff: how fast accuracy drops with distance
+//   range: [min, max] preferred engagement distance · pellets: shotgun pellets per round
+export const BOT_WEAPONS = {
+  ak47: { weight: 22, burst: 3, shotInterval: 0.11, pauseMin: 0.55, pauseJitter: 0.4, damageToPlayer: 4.5, damageToBot: 9, accuracy: 1.0, falloff: 1.0, range: [8, 18], pellets: 1, sightRange: 90 },
+  m4: { weight: 20, burst: 3, shotInterval: 0.09, pauseMin: 0.5, pauseJitter: 0.4, damageToPlayer: 4, damageToBot: 8, accuracy: 1.08, falloff: 0.9, range: [9, 20], pellets: 1, sightRange: 95 },
+  shotgun: { weight: 12, burst: 1, shotInterval: 0, pauseMin: 0.9, pauseJitter: 0.4, damageToPlayer: 3.2, damageToBot: 6, accuracy: 1.25, falloff: 3.2, range: [3, 9], pellets: 6, sightRange: 60 },
+  lmg: { weight: 8, burst: 6, shotInterval: 0.085, pauseMin: 0.9, pauseJitter: 0.5, damageToPlayer: 3.6, damageToBot: 7, accuracy: 0.85, falloff: 0.9, range: [12, 26], pellets: 1, sightRange: 100 },
+  rail: { weight: 6, burst: 1, shotInterval: 0, pauseMin: 2.2, pauseJitter: 0.8, damageToPlayer: 34, damageToBot: 55, accuracy: 1.2, falloff: 0.35, range: [24, 55], pellets: 1, sightRange: 130 },
+  pistol: { weight: 14, burst: 2, shotInterval: 0.2, pauseMin: 0.5, pauseJitter: 0.4, damageToPlayer: 5, damageToBot: 9, accuracy: 0.95, falloff: 1.2, range: [6, 14], pellets: 1, sightRange: 75 },
+  deagle: { weight: 10, burst: 1, shotInterval: 0, pauseMin: 0.75, pauseJitter: 0.35, damageToPlayer: 13, damageToBot: 22, accuracy: 1.0, falloff: 1.1, range: [6, 16], pellets: 1, sightRange: 80 },
+  glock18: { weight: 8, burst: 5, shotInterval: 0.06, pauseMin: 0.8, pauseJitter: 0.4, damageToPlayer: 2.8, damageToBot: 5, accuracy: 0.8, falloff: 1.4, range: [4, 12], pellets: 1, sightRange: 70 },
+};
+export const BOT_WEAPON_IDS = Object.keys(BOT_WEAPONS);
+
+// What bots do with a donkey ability (the player versions are in ABILITIES).
+export const BOT_ABILITIES = {
+  hyperSpeed: { duration: 15, speedMultiplier: 1.9, dashCooldownScale: 0.3 },
+  teleport: { duration: 30, charges: 3, flankDistance: 9, roamBlink: 24 },
+  deadEye: { duration: 10, accuracyMultiplier: 1.7, pauseScale: 0.55 },
+  propHunt: { duration: 22, ambushRange: 7 },
+};
+
 export const TEAMS = {
   red: { id: 'red', label: 'ENEMY', bodyColor: 0xd63b3b, accentColor: 0x222222, tagColor: 0xff3a3a, cssClass: 'red' },
   blue: { id: 'blue', label: 'ALLY', bodyColor: 0x2f6fe0, accentColor: 0xffd23f, tagColor: 0x3aa0ff, cssClass: 'blue' },
@@ -215,29 +261,34 @@ export const TEAMS = {
 
 export const PLAYER_TEAM = 'blue';
 
+// Authored for the 112 m arena; use getSpawnPoints() so bigger maps push bases outward.
 export const SPAWN_POINTS = {
-  red: [[-30, -100], [0, -102], [30, -100], [-12, -98]],
-  blue: [[-10, 98], [14, 98], [0, 94]],
+  red: [[-30, -100], [0, -102], [30, -100], [-12, -98], [14, -98], [-44, -96], [44, -96], [-22, -104], [22, -104], [0, -94]],
+  blue: [[-10, 98], [14, 98], [0, 94], [-26, 100], [28, 100], [-42, 96], [42, 96], [-18, 104], [20, 104], [6, 102]],
 };
+
+export function getSpawnPoints(team) {
+  return SPAWN_POINTS[team].map(scalePoint);
+}
 
 // Name pools; each mode decides how many bots per team (see MODES[].roster).
 export const ROSTER = {
-  red: ['PoxelKing68', 'PoxelGamer52', 'PoxelWarrior41', 'HungryChick', 'IronVandal', 'RustViper'],
-  blue: ['PoxelNinja7', 'BlockBuddy', 'SteelWolf', 'AmberHawk'],
+  red: ['PoxelKing68', 'PoxelGamer52', 'PoxelWarrior41', 'HungryChick', 'IronVandal', 'RustViper', 'GrimBrick', 'Scorch99', 'NightOwl', 'Havok', 'RedBaron', 'Cinder', 'Kraken', 'Molotov'],
+  blue: ['PoxelNinja7', 'BlockBuddy', 'SteelWolf', 'AmberHawk', 'Falcon', 'Atlas', 'Granite', 'Echo', 'Maverick', 'Nova', 'Bulldog', 'Sparrow', 'Titan'],
 };
 
 // Game modes. roster = number of bots per team (the player is always on blue).
 // rules: 'tags' (Kill Confirmed), 'kills' (every elimination scores), 'flags' (Capture the Flag).
 export const MODES = [
   {
-    id: 'kill-confirmed', name: 'KILL CONFIRMED', codename: 'RECOVER TAGS', scoreGoal: 20, rules: 'tags', usesTags: true, usesFlags: false,
-    roster: { red: 4, blue: 2 }, scoreLabel: 'Tags confirmed',
-    description: 'Kill Confirmed: kill an enemy, then walk over the dropped red tag to confirm it for +1. Blue tags are your team\'s: grab them to deny the enemy. First to 20 wins.',
+    id: 'kill-confirmed', name: 'KILL CONFIRMED', codename: 'RECOVER TAGS', scoreGoal: 30, rules: 'tags', usesTags: true, usesFlags: false,
+    roster: { red: 8, blue: 6 }, scoreLabel: 'Tags confirmed',
+    description: 'Kill Confirmed: kill an enemy, then walk over the dropped red tag to confirm it for +1. Blue tags are your team\'s: grab them to deny the enemy. 7v8 squads, first to 30 wins.',
   },
   {
-    id: 'team-deathmatch', name: 'TEAM DEATHMATCH', codename: 'ATTRITION', scoreGoal: 25, rules: 'kills', usesTags: false, usesFlags: false,
-    roster: { red: 4, blue: 2 }, scoreLabel: 'Team kills',
-    description: 'Team Deathmatch: every elimination scores a point for your team. First to 25 kills wins.',
+    id: 'team-deathmatch', name: 'TEAM DEATHMATCH', codename: 'ATTRITION', scoreGoal: 40, rules: 'kills', usesTags: false, usesFlags: false,
+    roster: { red: 8, blue: 6 }, scoreLabel: 'Team kills',
+    description: 'Team Deathmatch: 7v8 — every elimination scores a point for your team. First to 40 kills wins.',
   },
   {
     id: 'arena-1v1', name: '1V1 ARENA', codename: 'DUEL', scoreGoal: 10, rules: 'kills', usesTags: false, usesFlags: false,
@@ -251,13 +302,19 @@ export const MODES = [
   },
   {
     id: 'ctf', name: 'CAPTURE THE FLAG', codename: 'SEIZE COLORS', scoreGoal: 3, rules: 'flags', usesTags: false, usesFlags: true,
-    roster: { red: 4, blue: 3 }, scoreLabel: 'Flags captured',
+    roster: { red: 7, blue: 6 }, scoreLabel: 'Flags captured',
     description: 'Capture the Flag: steal the red flag from the enemy base and carry it to your own flag. Your flag must be home to score. First to 3 captures wins.',
   },
 ];
 
+MODES.push({
+  id: 'warzone', name: 'WARZONE 12V12', codename: 'TOTAL WAR', scoreGoal: 75, rules: 'kills', usesTags: false, usesFlags: false,
+  roster: { red: 12, blue: 11 }, scoreLabel: 'Team kills', durationSeconds: 480, preferredMap: 'frontline',
+  description: 'Warzone: you and 11 soldiers against 12 hostiles in an all-out battle. Best on FRONTLINE. First to 75 kills or most kills after 8 minutes wins.',
+});
+
 export const CTF = {
-  flagPositions: { blue: [0, 104], red: [0, -104] },
+  flagPositions: { blue: [0, 104], red: [0, -104] },   // authored for 112 m; see getFlagPosition()
   pickupRadius: 2.0,
   autoReturnTime: 20,
   carrierSpeedMultiplier: 0.9,
@@ -265,6 +322,10 @@ export const CTF = {
 };
 
 // Multi-kill window and announcer titles.
+export function getFlagPosition(team) {
+  return scalePoint(CTF.flagPositions[team]);
+}
+
 export const ANNOUNCER = {
   multiKillWindow: 4.5,
   titles: { 1: 'SINGLE KILL', 2: 'DOUBLE KILL', 3: 'TRIPLE KILL', 4: 'QUAD KILL', 5: 'MULTI KILL' },
@@ -310,10 +371,10 @@ export const PET = {
 
 // Donkeys wander the map; eliminating one grants a random special ability.
 export const DONKEY = {
-  maxAlive: 2,
+  maxAlive: 6,                  // on the classic arena; bigger maps scale this up
   health: 45,
   speed: 2.2,
-  respawnDelay: 22,
+  respawnDelay: 10,
   brayIntervalMin: 5,
   brayIntervalMax: 11,
   spawnAreaHalfSize: 75,
@@ -346,6 +407,7 @@ export const VOXEL = {
     concrete: { surface: 'concrete', health: 150, penetrable: false, debrisColor: 0x9a968c },
     metal: { surface: 'metal', health: 170, penetrable: false, debrisColor: 0x3a4a50 },
     wood: { surface: 'crate', health: 45, penetrable: true, debrisColor: 0x8a6a3a },
+    sandbag: { surface: 'plaster', health: 110, penetrable: false, debrisColor: 0xa89270 },
   },
   penetrationDamageFactor: 0.6,   // damage kept after passing through a penetrable cell
   maxPenetrations: 2,
@@ -358,7 +420,7 @@ export const VOXEL = {
 
 
 export const MATCH = {
-  durationSeconds: 300,
+  durationSeconds: 300,         // modes may override with durationSeconds
   tagLifetime: 25,
   tagPickupRadius: 1.7,
   pointsPerKill: 100,
@@ -398,6 +460,17 @@ export const MAPS = [
     hemisphereSky: 0xffe2c4, hemisphereGround: 0x4a7a2a,
     barrels: [[-8, -12], [8, 16], [-30, 4], [30, -6], [0, -36], [16, 40], [-40, -20]],
   },
+  {
+    id: 'frontline', name: 'FRONTLINE', codename: 'OP. NO MAN\'S LAND', terrain: 'BATTLEFIELD', halfSize: 168, ambience: 'war',
+    briefing: 'Huge war-torn valley: trench lines, bunkers, a ruined village with a bell tower, burning tank wrecks and craters. Built for big battles.',
+    groundColor: 0x7d8f45, outerGroundColor: 0x6a7a3c, wallColor: 0x5a5a4a,
+    sky: { top: 0x4a74b0, horizon: 0xf0c8a0, bottom: 0x8a7a5a, sunColor: 0xffd0a0, sunElevation: 17, sunAzimuth: 235 },
+    fogDensity: 0.0034,
+    sunIntensity: 2.7, hemisphereIntensity: 0.65,
+    hemisphereSky: 0xffe0c0, hemisphereGround: 0x5a5a32,
+    barrels: [[-12, -18], [14, 20], [-40, 6], [40, -8], [0, -48], [20, 52], [-52, -30], [60, 34], [-70, 60], [72, -58], [-20, 88], [24, -92]],
+    fires: [[-46, -22], [52, 28], [10, -44], [-14, 44], [86, -10], [-90, 14]],   // burning tank wrecks
+  },
 ];
 
 export const OUTPOST_POSITIONS = [[75, 75], [-75, 75], [75, -75], [-75, -75], [96, 0], [-96, 0]];
@@ -410,11 +483,11 @@ export const GRAPHICS_PRESETS = {
   },
   medium: {
     label: 'MEDIUM', maxPixelRatio: 1.5, shadowMapSize: 2048, shadows: true, postProcessing: true,
-    ambientOcclusion: false, bloom: true, msaaSamples: 4, grassClusters: 3500, outerTrees: 110, clouds: 12,
+    ambientOcclusion: false, bloom: true, grading: true, msaaSamples: 4, grassClusters: 3500, outerTrees: 110, clouds: 12,
   },
   high: {
     label: 'ULTRA', maxPixelRatio: 1.5, shadowMapSize: 4096, shadows: true, postProcessing: true,
-    ambientOcclusion: true, bloom: true, msaaSamples: 4, grassClusters: 7000, outerTrees: 170, clouds: 16,
+    ambientOcclusion: true, bloom: true, grading: true, msaaSamples: 4, grassClusters: 7000, outerTrees: 170, clouds: 16,
   },
 };
 
@@ -428,8 +501,16 @@ export const RENDER = {
   bloomRadius: 0.55,
   bloomThreshold: 1.05,
   cameraNear: 0.08,
-  cameraFar: 1200,
-  skyRadius: 900,
+  cameraFar: 1400,
+  skyRadius: 1100,
+  // Cinematic grade (MEDIUM / ULTRA).
+  gradeVignette: 0.34,
+  gradeGrain: 0.045,
+  gradeAberration: 0.0022,
+  gradeSaturation: 1.1,
+  gradeContrast: 1.07,
+  gradeWarmth: 0.035,
+  gradeShadowTint: [-0.008, 0.002, 0.022],
 };
 
 // Optional audio files. Leave a value empty to use the built-in synthesizer.

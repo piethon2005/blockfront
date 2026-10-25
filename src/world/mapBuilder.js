@@ -1,8 +1,10 @@
 // =====================================================================
-// Map builder — assembles BRICKYARD and POXELTOWN from structure
+// Map builder — assembles BRICKYARD, POXELTOWN and FRONTLINE from structure
 // primitives (most of them destructible voxel structures), then adds
 // ground, instanced swaying grass, voxel flowers, drifting clouds and the
-// distant horizon.
+// distant horizon. Maps can be bigger than the classic 112 m arena
+// (MAPS[].halfSize); the active size is written to WORLD.arenaHalfSize
+// so spawns, roaming, loot and scenery scale with it.
 // =====================================================================
 
 import * as THREE from 'three';
@@ -81,6 +83,7 @@ export class MapBuilder {
     this.group = null;
     this.clouds = [];
     this.currentMapIndex = 0;
+    this.fireSpots = [];
   }
 
   get currentMap() {
@@ -103,6 +106,8 @@ export class MapBuilder {
     this.physics.reset();
     this.currentMapIndex = mapIndex;
     const mapConfig = MAPS[mapIndex];
+    WORLD.arenaHalfSize = mapConfig.halfSize || WORLD.baseHalfSize;
+    this.fireSpots = mapConfig.fires || [];
 
     this.group = new THREE.Group();
     this.group.name = `map-${mapConfig.id}`;
@@ -112,21 +117,23 @@ export class MapBuilder {
     const builder = new StructureBuilder({ group: this.group, physics: this.physics, voxelWorld: this.voxelWorld, random: createSeededRandom(1234 + mapIndex * 77) });
     this.buildGround(mapConfig);
 
-    if (mapIndex === 0) this.buildBrickyard(builder);
+    if (mapConfig.id === 'brickyard') this.buildBrickyard(builder);
+    else if (mapConfig.id === 'frontline') this.buildFrontline(builder);
     else this.buildPoxeltown(builder);
 
     builder.buildVerticalLayer(mapConfig.wallColor);
     builder.buildScenery(preset.outerTrees);
     builder.finalize();
 
-    this.scatterGrass(mapIndex, preset.grassClusters);
+    const scale = WORLD.arenaHalfSize / WORLD.baseHalfSize;
+    this.scatterGrass(mapIndex, Math.round(preset.grassClusters * Math.min(2.2, scale * scale)));
     this.buildClouds(preset.clouds);
     return mapConfig;
   }
 
   // ------------------------------------------------------------------ ground
   buildGround(mapConfig) {
-    const arenaSize = 240;
+    const arenaSize = WORLD.arenaHalfSize * 2 + 16;
     const grassTile = SURFACE_DEFINITIONS.grass.unitsPerTile;
     const groundGeometry = new THREE.PlaneGeometry(arenaSize, arenaSize);
     const uvAttribute = groundGeometry.attributes.uv;
@@ -239,14 +246,91 @@ export class MapBuilder {
     for (const [x, z] of [[-7, -7], [7, 7], [-7, 20], [7, -20], [20, -7], [-20, 7]]) builder.lampPost(x, z);
   }
 
+  // ------------------------------------------------------------------ FRONTLINE
+  /**
+   * A big war-torn valley (336 m across). Blue holds the south (+Z), red the north (-Z).
+   *   • Base lines: bunkers and supply stacks near each spawn.
+   *   • Trench lines: long sandbag walls with gaps and barbed wire facing no-man's land.
+   *   • No-man's land: craters, mud and burning tank wrecks.
+   *   • Centre: a shelled village around a church with a bell tower.
+   */
+  buildFrontline(builder) {
+    const flat = { collides: false, castShadow: false };
+    const half = WORLD.arenaHalfSize;
+    const dirtRoad = 0x7a6648;
+    // Supply road down the middle and a village street across it.
+    builder.block(0, 0, 8, 0.08, half * 2, dirtRoad, { ...flat, surface: 'asphalt' });
+    builder.block(0, 0, 160, 0.08, 7, dirtRoad, { ...flat, surface: 'asphalt' });
+
+    // Trenches (sandbags + barbed wire facing the enemy).
+    builder.trenchLine(64, 120, -1);
+    builder.trenchLine(-64, 120, 1);
+    // Second-line bunkers guarding each base.
+    for (const side of [-1, 1]) {
+      builder.bunker(-52, side * 112, -side);
+      builder.bunker(52, side * 112, -side);
+      builder.bunker(0, side * 96, -side);
+      builder.sandbagWall(-26, side * 120, 12, true);
+      builder.sandbagWall(26, side * 120, 12, true);
+      builder.container(-84, side * 128, 7, 3, 3, side > 0 ? 0x2f5a3a : 0x5a3a2f);
+      builder.container(84, side * 128, 7, 3, 3, side > 0 ? 0x2f5a3a : 0x5a3a2f);
+      builder.crate(-36, side * 132, 3, 3, 0x7a6a3a);
+      builder.crate(36, side * 132, 3, 3, 0x7a6a3a);
+      builder.crate(-32, side * 134, 2, 2, 0x7a6a3a);
+    }
+
+    // Shelled village around the church.
+    builder.church(-6, -2);
+    const houseColors = [0xd8ccb0, 0xc8b890, 0xb8a888, 0xd0c4a8];
+    [[-34, -26], [30, -24], [-36, 24], [34, 26], [-62, 4], [62, -4], [18, 40], [-18, -42]]
+      .forEach(([x, z], index) => builder.ruinedHouse(x, z, houseColors[index % houseColors.length], index + 3));
+    for (const [x, z] of [[-14, 14], [16, -14], [48, 12], [-48, -14], [6, 30], [-4, -30]]) builder.rubble(x, z, 0x7a5a4a);
+    builder.fence(-24, 10, 12, true);
+    builder.fence(24, -10, 12, true);
+    builder.fence(44, 40, 10, false);
+    builder.fence(-44, -40, 10, false);
+
+    // No-man's land: burning wrecks, craters and mud.
+    const wrecks = MAPS.find((map) => map.id === 'frontline').fires || [];
+    wrecks.forEach(([x, z], index) => builder.tankWreck(x, z, index % 2 === 0));
+    const random = createSeededRandom(4242);
+    for (let index = 0; index < 34; index++) {
+      const x = (random() * 2 - 1) * (half - 20);
+      const z = (random() * 2 - 1) * 54;
+      if (this.physics.isPointBlocked(x, z, 3)) continue;
+      builder.crater(x, z, 1.8 + random() * 2.8);
+    }
+    for (let index = 0; index < 26; index++) {
+      builder.mudPatch((random() * 2 - 1) * (half - 10), (random() * 2 - 1) * (half - 30), 4 + random() * 9);
+    }
+
+    // Tree lines on the flanks and shattered stumps in the open.
+    for (let index = 0; index < 26; index++) {
+      const side = index % 2 ? 1 : -1;
+      const x = side * (110 + random() * (half - 118));
+      const z = (random() * 2 - 1) * (half - 20);
+      if (!this.physics.isPointBlocked(x, z, 2)) builder.tree(x, z, 1 + random() * 0.6);
+    }
+    for (let index = 0; index < 12; index++) {
+      const x = (random() * 2 - 1) * 90;
+      const z = (random() * 2 - 1) * 50;
+      if (!this.physics.isPointBlocked(x, z, 1.5)) builder.block(x, z, 0.8, 1.2 + random() * 1.6, 0.8, 0x3a2a1c, { surface: 'bark' });
+    }
+    [[-92, 40], [92, -40], [-100, -60], [100, 60]].forEach(([x, z]) => builder.bush(x, z, 3));
+    for (const [x, z] of [[-10, 8], [10, -8], [-40, 0], [40, 0]]) builder.lampPost(x, z);
+  }
+
   // ------------------------------------------------------------------ grass & flowers
   scatterGrass(mapIndex, clusterCount) {
     if (clusterCount <= 0) return;
     const random = createSeededRandom(99 + mapIndex);
     const limit = WORLD.arenaHalfSize - 2;
-    const isOnPavement = (x, z) => (mapIndex === 0
-      ? Math.abs(x) < 15.5 && Math.abs(z) < 15.5
-      : (Math.abs(x) < 6 && Math.abs(z) < 51) || (Math.abs(z) < 6 && Math.abs(x) < 51));
+    const mapId = MAPS[mapIndex].id;
+    const isOnPavement = (x, z) => {
+      if (mapId === 'brickyard') return Math.abs(x) < 15.5 && Math.abs(z) < 15.5;
+      if (mapId === 'frontline') return Math.abs(x) < 5 || (Math.abs(z) < 4.5 && Math.abs(x) < 80);
+      return (Math.abs(x) < 6 && Math.abs(z) < 51) || (Math.abs(z) < 6 && Math.abs(x) < 51);
+    };
 
     const transforms = [];
     let attempts = 0;
@@ -311,7 +395,7 @@ export class MapBuilder {
       const geometry = puffs.reduce((merged, next) => (merged ? mergeTwo(merged, next) : next), null);
       const cloud = new THREE.Mesh(geometry, cloudMaterial);
       const angle = random() * Math.PI * 2;
-      const distance = 40 + random() * 320;
+      const distance = 40 + random() * (WORLD.arenaHalfSize * 2.9);
       cloud.position.set(Math.cos(angle) * distance, 90 + random() * 50, Math.sin(angle) * distance);
       cloud.userData.driftSpeed = 1.5 + random() * 2.5;
       this.group.add(cloud);

@@ -12,7 +12,7 @@
 // =====================================================================
 
 import * as THREE from 'three';
-import { CTF, TEAMS } from '../config.js';
+import { CTF, TEAMS, getFlagPosition } from '../config.js';
 import { events } from '../core/events.js';
 import { netState } from '../net/netState.js';
 
@@ -154,7 +154,7 @@ export class FlagManager {
     this.isActive = active;
     if (!active) return;
     for (const team of ['blue', 'red']) {
-      const [x, z] = CTF.flagPositions[team];
+      const [x, z] = getFlagPosition(team);
       const visual = buildFlagVisual(team);
       const pad = buildBasePad(team, x, z);
       this.scene.add(visual.group, pad);

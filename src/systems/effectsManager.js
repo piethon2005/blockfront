@@ -11,7 +11,7 @@
 // =====================================================================
 
 import * as THREE from 'three';
-import { LOOT } from '../config.js';
+import { getFlagPosition, LOOT } from '../config.js';
 import { events } from '../core/events.js';
 import { createCanvasTexture } from '../world/materials.js';
 
@@ -233,8 +233,8 @@ export class EffectsManager {
     this.shakeIntensity = 0;
 
     this.sparks = new ParticlePool(scene, 900, { additive: true, softness: 1.2 });
-    this.fire = new ParticlePool(scene, 400, { additive: true, softness: 2.0 });
-    this.smoke = new ParticlePool(scene, 1100, { additive: false, softness: 1.6 });
+    this.fire = new ParticlePool(scene, 900, { additive: true, softness: 2.0 });
+    this.smoke = new ParticlePool(scene, 3000, { additive: false, softness: 1.6 });
     this.debris = new DebrisPool(scene, 420);
 
     this.createTracerPool();
@@ -253,7 +253,7 @@ export class EffectsManager {
   createTracerPool() {
     this.tracers = [];
     const geometry = new THREE.BoxGeometry(1, 1, 1).translate(0, 0, -0.5);
-    for (let index = 0; index < 48; index++) {
+    for (let index = 0; index < 110; index++) {
       const material = new THREE.MeshBasicMaterial({ color: new THREE.Color(4, 3, 1.4), transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false });
       const mesh = new THREE.Mesh(geometry, material);
       mesh.visible = false;
@@ -331,7 +331,7 @@ export class EffectsManager {
 
     // World flashes for bots (camera-facing quads).
     this.worldFlashes = [];
-    for (let index = 0; index < 10; index++) {
+    for (let index = 0; index < 24; index++) {
       const mesh = new THREE.Mesh(new THREE.PlaneGeometry(0.8, 0.8), makeFlashMaterial());
       mesh.visible = false;
       this.scene.add(mesh);
@@ -399,7 +399,20 @@ export class EffectsManager {
       this.tagBurst(position.clone().setY(1.4), LOOT.rarityColors.elite);
     });
     events.on('pet:bite', ({ position }) => this.hitSparks(position, false));
-    events.on('flag:captured', ({ team }) => this.tagBurst(new THREE.Vector3(0, 2, team === 'blue' ? 104 : -104), team === 'blue' ? 0x3aa0ff : 0xff3a3a));
+    events.on('bot:dash', ({ position, direction }) => this.dashDust(position, direction));
+    events.on('bot:teleport', ({ from, to }) => {
+      this.teleportBurst(from);
+      this.teleportBurst(to);
+    });
+    events.on('bot:ability', ({ id, position }) => {
+      if (id === 'propHunt' || id === 'ambush') this.poof(position, 0xd8d8d0, 0xffd23f);
+      else this.tagBurst(position.clone().setY(1.6), 0xffb21a);
+    });
+    events.on('ambience:artillery', ({ position }) => this.distantBlast(position));
+    events.on('flag:captured', ({ team }) => {
+      const [flagX, flagZ] = getFlagPosition(team);
+      this.tagBurst(new THREE.Vector3(flagX, 2, flagZ), team === 'blue' ? 0x3aa0ff : 0xff3a3a);
+    });
     events.on('weather:update', ({ type, intensity }) => {
       this.weatherType = type;
       this.weatherIntensity = intensity;
@@ -462,7 +475,12 @@ export class EffectsManager {
     this.addShake(weapon.id === 'shotgun' ? 0.2 : weapon.id === 'rail' ? 0.22 : 0.035);
   }
 
-  onBotFire({ origin, target }) {
+  onBotFire({ origin, target, weaponId, silent }) {
+    if (silent) {
+      // Extra shotgun pellets: tracer only.
+      this.spawnTracer(origin, target, { color: new THREE.Color(4, 2.2, 1.0), speed: 300, trail: 4, thickness: 0.03 });
+      return;
+    }
     const flash = this.worldFlashes[this.worldFlashCursor];
     this.worldFlashCursor = (this.worldFlashCursor + 1) % this.worldFlashes.length;
     flash.mesh.position.copy(origin);
@@ -472,7 +490,45 @@ export class EffectsManager {
     flash.timer = 0.06;
     this.botMuzzleLight.position.copy(origin);
     this.botMuzzleLight.intensity = 14;
-    this.spawnTracer(origin, target, { color: new THREE.Color(4, 2.2, 1.0), speed: 300, trail: 6, thickness: 0.04 });
+    if (weaponId === 'rail') {
+      this.spawnTracer(origin, target, { color: new THREE.Color(0.8, 3, 5), speed: 900, trail: 120, thickness: 0.06 });
+      this.railTrail(origin, target);
+    } else {
+      this.spawnTracer(origin, target, { color: new THREE.Color(4, 2.2, 1.0), speed: 300, trail: 6, thickness: 0.04 });
+    }
+    flash.mesh.scale.setScalar(weaponId === 'shotgun' || weaponId === 'deagle' ? 1.5 : weaponId === 'lmg' ? 1.2 : 1);
+    // A thin wisp of muzzle smoke.
+    if (Math.random() < 0.5) {
+      this.smoke.spawn(origin, this.scratchVelocity.set((Math.random() - 0.5) * 0.5, 0.5, (Math.random() - 0.5) * 0.5), {
+        color: this.scratchColor.setRGB(0.6, 0.6, 0.62), lifetime: 0.8, startSize: 0.2, endSize: 0.8, alpha: 0.3, drag: 2,
+      });
+    }
+  }
+
+  /** Kicked-up dirt when a soldier dashes. */
+  dashDust(position, direction) {
+    for (let index = 0; index < 8; index++) {
+      const start = position.clone().add(new THREE.Vector3((Math.random() - 0.5) * 0.8, 0.15, (Math.random() - 0.5) * 0.8));
+      this.smoke.spawn(start, this.scratchVelocity.set(-direction.x * 2 + (Math.random() - 0.5) * 2, 0.4 + Math.random() * 0.6, -direction.z * 2 + (Math.random() - 0.5) * 2), {
+        color: this.scratchColor.setRGB(0.55, 0.5, 0.42), lifetime: 0.9 + Math.random() * 0.4, startSize: 0.4, endSize: 1.6, alpha: 0.4, drag: 2.5,
+      });
+    }
+  }
+
+  /** Artillery landing far outside the arena: a flash, a fireball and a towering smoke column. */
+  distantBlast(position) {
+    for (let index = 0; index < 26; index++) {
+      const direction = new THREE.Vector3(Math.random() - 0.5, Math.random() * 0.9 + 0.1, Math.random() - 0.5).normalize();
+      this.fire.spawn(position, direction.multiplyScalar(6 + Math.random() * 10), {
+        color: this.scratchColor.setRGB(6, 2.2, 0.5), lifetime: 0.6 + Math.random() * 0.5, startSize: 6 + Math.random() * 4, endSize: 1, drag: 2.5, gravity: -3,
+      });
+    }
+    for (let index = 0; index < 22; index++) {
+      const direction = new THREE.Vector3((Math.random() - 0.5) * 0.6, 1, (Math.random() - 0.5) * 0.6).normalize();
+      this.smoke.spawn(position.clone().addScaledVector(direction, Math.random() * 3), direction.multiplyScalar(5 + Math.random() * 8), {
+        color: this.scratchColor.setRGB(0.16, 0.15, 0.14), lifetime: 5 + Math.random() * 3, startSize: 7, endSize: 22, alpha: 0.55, drag: 0.8, gravity: -0.4,
+      });
+    }
   }
 
   spawnTracer(start, end, { color, speed, trail, thickness }) {
@@ -657,6 +713,10 @@ export class EffectsManager {
         if (emitter.kind === 'beacon') this.beaconLight.intensity = 0;
         continue;
       }
+      if (emitter.kind === 'fire') {
+        this.updateFireEmitter(emitter, deltaSeconds);
+        continue;
+      }
       if (emitter.kind !== 'beacon') continue;
       // Thick red signal smoke rising and drifting with the wind, plus a sputtering flare.
       emitter.spawnAccumulator += deltaSeconds;
@@ -672,6 +732,30 @@ export class EffectsManager {
       }
       this.beaconLight.position.copy(emitter.position).setY(1);
       this.beaconLight.intensity = 22 + Math.random() * 18;
+    }
+  }
+
+  /** Burning wreck: licking flames, embers and a thick black smoke column. */
+  updateFireEmitter(emitter, deltaSeconds) {
+    // Skip the work for fires far from the camera (they are hidden by fog anyway).
+    if (emitter.position.distanceTo(this.camera.position) > 170) return;
+    emitter.spawnAccumulator += deltaSeconds;
+    while (emitter.spawnAccumulator > 0.045) {
+      emitter.spawnAccumulator -= 0.045;
+      const base = emitter.position.clone().add(new THREE.Vector3((Math.random() - 0.5) * 2.2, 0.6 + Math.random() * 0.8, (Math.random() - 0.5) * 2.2));
+      this.fire.spawn(base, this.scratchVelocity.set((Math.random() - 0.5) * 0.8, 2 + Math.random() * 2, (Math.random() - 0.5) * 0.8), {
+        color: this.scratchColor.setRGB(5, 1.6 + Math.random() * 1.2, 0.35), lifetime: 0.5 + Math.random() * 0.4, startSize: 1.1 + Math.random() * 0.8, endSize: 0.2, drag: 1.5, gravity: -2,
+      });
+      if (Math.random() < 0.55) {
+        this.smoke.spawn(base.clone().setY(base.y + 1.2), this.scratchVelocity.set(0.7 + Math.random() * 0.6, 2.4 + Math.random() * 1.5, (Math.random() - 0.5) * 0.6), {
+          color: this.scratchColor.setRGB(0.09, 0.085, 0.08), lifetime: 5 + Math.random() * 2, startSize: 1.4, endSize: 8, alpha: 0.6, drag: 0.3,
+        });
+      }
+      if (Math.random() < 0.25) {
+        this.sparks.spawn(base, this.scratchVelocity.set((Math.random() - 0.5) * 2, 3 + Math.random() * 3, (Math.random() - 0.5) * 2), {
+          color: this.scratchColor.setRGB(5, 2, 0.4), lifetime: 1 + Math.random(), startSize: 0.08, endSize: 0.01, gravity: -0.5, drag: 0.4,
+        });
+      }
     }
   }
 
@@ -777,6 +861,7 @@ export class EffectsManager {
     this.debrisBudget = 60;
     this.updateEmitters(deltaSeconds);
     this.updateWeatherParticles();
+    this.updateAmbientParticles(deltaSeconds);
     this.sparks.update(deltaSeconds);
     this.fire.update(deltaSeconds);
     this.smoke.update(deltaSeconds);
@@ -830,6 +915,40 @@ export class EffectsManager {
     }
 
     this.shakeIntensity = Math.max(0, this.shakeIntensity - deltaSeconds * 2.4);
+  }
+
+  /**
+   * Floating particles around the camera for atmosphere:
+   *   'dust' — slow golden motes catching the sun.
+   *   'ash'  — grey ash flakes drifting down plus the odd glowing ember (FRONTLINE).
+   */
+  setAmbientParticles(kind) {
+    this.ambientParticles = kind;
+  }
+
+  updateAmbientParticles(deltaSeconds) {
+    if (!this.ambientParticles) return;
+    this.ambientAccumulator = (this.ambientAccumulator || 0) + deltaSeconds;
+    const interval = this.ambientParticles === 'ash' ? 0.03 : 0.09;
+    const cameraPosition = this.camera.position;
+    while (this.ambientAccumulator > interval) {
+      this.ambientAccumulator -= interval;
+      const start = new THREE.Vector3(cameraPosition.x + (Math.random() - 0.5) * 30, cameraPosition.y + Math.random() * 9 - 1, cameraPosition.z + (Math.random() - 0.5) * 30);
+      if (this.ambientParticles === 'ash') {
+        this.smoke.spawn(start, this.scratchVelocity.set(0.8 + Math.random() * 0.6, -0.5 - Math.random() * 0.4, (Math.random() - 0.5) * 0.6), {
+          color: this.scratchColor.setRGB(0.42, 0.4, 0.38), lifetime: 5, startSize: 0.07, endSize: 0.05, alpha: 0.7, drag: 0,
+        });
+        if (Math.random() < 0.12) {
+          this.sparks.spawn(start, this.scratchVelocity.set(0.6 + Math.random(), 0.3 + Math.random() * 0.5, (Math.random() - 0.5)), {
+            color: this.scratchColor.setRGB(4, 1.3, 0.3), lifetime: 3, startSize: 0.05, endSize: 0.02, drag: 0.1,
+          });
+        }
+      } else {
+        this.sparks.spawn(start, this.scratchVelocity.set((Math.random() - 0.5) * 0.3, (Math.random() - 0.5) * 0.15, (Math.random() - 0.5) * 0.3), {
+          color: this.scratchColor.setRGB(0.9, 0.78, 0.5), lifetime: 4, startSize: 0.035, endSize: 0.035, alpha: 0.5, drag: 0,
+        });
+      }
+    }
   }
 
   /** Remove transient visuals (used when a new match starts). */

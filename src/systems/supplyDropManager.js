@@ -11,7 +11,7 @@
 // =====================================================================
 
 import * as THREE from 'three';
-import { SUPPLY_DROP } from '../config.js';
+import { SUPPLY_DROP, arenaScale } from '../config.js';
 import { events } from '../core/events.js';
 import { createWeaponItem } from '../entities/inventory.js';
 import { getPlainMaterial, getSurfaceMaterial, applyWorldUVs } from '../world/materials.js';
@@ -105,7 +105,7 @@ export class SupplyDropManager {
   }
 
   pickLandingSpot() {
-    const limit = SUPPLY_DROP.landingAreaHalfSize;
+    const limit = SUPPLY_DROP.landingAreaHalfSize * arenaScale();
     for (let attempt = 0; attempt < 60; attempt++) {
       const x = (Math.random() * 2 - 1) * limit;
       const z = (Math.random() * 2 - 1) * limit;

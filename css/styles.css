@@ -384,6 +384,8 @@ code { font-family: var(--font-mono); color: var(--amber); }
 
 .brief-label { font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.26em; color: var(--olive-pale); margin: 10px 0 6px; }
 .map-cards, .mode-cards { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.map-cards { grid-template-columns: repeat(3, 1fr); }
+.map-cards .map-card canvas { height: 58px; }
 .map-card, .mode-card {
   position: relative; border: 1px solid rgba(255, 255, 255, 0.12); background: rgba(0, 0, 0, 0.35); color: var(--bone);
   padding: 6px; cursor: pointer; text-align: left; transition: all 0.15s;
@@ -822,3 +824,20 @@ select.lobby-input option { background: #151913; }
   .lobby-start { width: 100%; }
   .lobby-code-box b { font-size: 32px; }
 }
+
+/* Three maps + six modes: keep the briefing panel compact and clear of the DEPLOY button. */
+.map-cards { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+.map-cards .map-card { min-width: 0; overflow: hidden; padding: 5px; }
+.map-cards .map-card canvas { height: 50px; }
+.map-cards .map-card b { font-size: 12px; letter-spacing: 0.04em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.map-cards .map-card small { display: none; }
+.map-cards .map-card.active::after { content: '✔'; top: 3px; right: 3px; padding: 0 4px; }
+.mode-cards { gap: 6px; }
+.mode-cards .mode-card { padding: 6px 8px; min-width: 0; }
+.mode-cards .mode-card b { font-size: 12px; margin-top: 0; }
+.mode-cards .mode-card small { font-size: 9px; letter-spacing: 0.08em; }
+.mode-cards .mode-card.active::after { content: '✔'; top: 4px; right: 4px; padding: 0 4px; }
+.briefing-panel { max-height: calc(100vh - 290px); overflow-y: auto; scrollbar-width: thin; }
+.briefing-panel .brief-text { font-size: 13px; min-height: 0; }
+
+.hud-board .is-more { font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.16em; color: var(--bone-dim); }

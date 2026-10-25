@@ -9,7 +9,7 @@
 // =====================================================================
 
 import * as THREE from 'three';
-import { DONKEY } from '../config.js';
+import { arenaScale, DONKEY } from '../config.js';
 import { events } from '../core/events.js';
 import { netState } from '../net/netState.js';
 
@@ -144,7 +144,7 @@ class Donkey {
     this.waypointTimer -= deltaSeconds;
     const reached = this.waypoint && Math.hypot(this.waypoint.x - this.position.x, this.waypoint.z - this.position.z) < 1.5;
     if (!this.waypoint || reached || this.waypointTimer <= 0) {
-      const area = DONKEY.spawnAreaHalfSize;
+      const area = DONKEY.spawnAreaHalfSize * arenaScale();
       const range = this.panicTimer > 0 ? 25 : 12;
       this.waypoint = {
         x: THREE.MathUtils.clamp(this.position.x + (Math.random() - 0.5) * range * 2, -area, area),
@@ -234,7 +234,7 @@ export class DonkeyManager {
   reset() {
     this.donkeys.forEach((donkey) => donkey.dispose());
     this.donkeys = [];
-    this.spawnTimer = 6;
+    this.spawnTimer = 3;
   }
 
   get hitTargets() {
@@ -243,8 +243,13 @@ export class DonkeyManager {
     return targets;
   }
 
+  /** More room, more donkeys. */
+  get maxAlive() {
+    return Math.round(DONKEY.maxAlive * Math.max(1, arenaScale() * arenaScale() * 0.7));
+  }
+
   spawnDonkey() {
-    const area = DONKEY.spawnAreaHalfSize;
+    const area = DONKEY.spawnAreaHalfSize * arenaScale();
     for (let attempt = 0; attempt < 40; attempt++) {
       const position = new THREE.Vector3((Math.random() * 2 - 1) * area, 0, (Math.random() * 2 - 1) * area);
       if (this.physics.isPointBlocked(position.x, position.z, 2)) continue;
@@ -257,14 +262,14 @@ export class DonkeyManager {
   }
 
   /** Apply damage from a shot. Returns true when the donkey died. killerPeerId = remote shooter (host only). */
-  damage(donkey, amount, byPlayer, killerPeerId = null) {
+  damage(donkey, amount, byPlayer, killerPeerId = null, killerBot = null) {
     if (!netState.isAuthority) {
       donkey.hitFlash = 1;
       events.emit('net:donkeyHit', { id: donkey.id, amount });
       return false;
     }
     if (!donkey.takeDamage(amount)) return false;
-    events.emit('donkey:killed', { id: donkey.id, position: donkey.position.clone(), byPlayer, killerPeerId });
+    events.emit('donkey:killed', { id: donkey.id, position: donkey.position.clone(), byPlayer, killerPeerId, killerBot });
     donkey.dispose();
     this.donkeys.splice(this.donkeys.indexOf(donkey), 1);
     this.spawnTimer = DONKEY.respawnDelay;
@@ -273,9 +278,10 @@ export class DonkeyManager {
 
   update(deltaSeconds) {
     if (netState.isAuthority) this.spawnTimer -= deltaSeconds;
-    if (this.spawnTimer <= 0 && this.donkeys.length < DONKEY.maxAlive) {
+    if (this.spawnTimer <= 0 && this.donkeys.length < this.maxAlive) {
       this.spawnDonkey();
-      this.spawnTimer = DONKEY.respawnDelay * 0.5;
+      // Fill the herd quickly, then trickle replacements in.
+      this.spawnTimer = this.donkeys.length < this.maxAlive ? 2 : DONKEY.respawnDelay * 0.5;
     }
     for (const donkey of this.donkeys) donkey.update(deltaSeconds, this.physics);
   }

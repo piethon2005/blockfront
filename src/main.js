@@ -13,7 +13,7 @@
 // =====================================================================
 
 import * as THREE from 'three';
-import { GENDERS, MAPS, MODES, PLAYER, ROSTER, SPAWN_POINTS, TRAITS, VOXEL } from './config.js';
+import { ABILITIES, GENDERS, MAPS, MODES, PLAYER, ROSTER, TRAITS, VOXEL, getSpawnPoints } from './config.js';
 import { events } from './core/events.js';
 import { saveSettings, settings } from './core/settings.js';
 import { GameRenderer } from './engine/renderer.js';
@@ -37,6 +37,7 @@ import { AbilityManager } from './systems/abilityManager.js';
 import { WeatherManager } from './systems/weatherManager.js';
 import { Announcer } from './systems/announcer.js';
 import { EffectsManager } from './systems/effectsManager.js';
+import { BattleAmbience } from './systems/battleAmbience.js';
 import { AudioManager } from './systems/audioManager.js';
 import { Hud } from './ui/hud.js';
 import { Menu } from './ui/menu.js';
@@ -123,7 +124,8 @@ async function boot() {
     for (const team of ['red', 'blue']) {
       const count = counts ? counts[team] : mode.roster[team];
       for (let index = 0; index < count; index++) {
-        const spawn = SPAWN_POINTS[team][index % SPAWN_POINTS[team].length];
+        const spawnList = getSpawnPoints(team);
+        const spawn = spawnList[index % spawnList.length];
         const name = ROSTER[team][index % ROSTER[team].length] + (index >= ROSTER[team].length ? `-${Math.floor(index / ROSTER[team].length) + 1}` : '');
         bots.push(new Bot({ name, team, spawn, scene, showNameTag: team === player.team, isPuppet: netState.isClient }));
       }
@@ -140,6 +142,7 @@ async function boot() {
 
   // ------------------------------------------------------------------ feedback systems
   const effects = new EffectsManager({ scene, camera });
+  const ambience = new BattleAmbience({ scene, effects, camera });
   const audio = new AudioManager({ master: settings.volumeMaster, music: settings.volumeMusic, sfx: settings.volumeSfx });
   audio.bindGameEvents();
   audio.voicePitch = GENDERS[settings.gender].voicePitch;
@@ -166,7 +169,11 @@ async function boot() {
     /** Raycast a player shot or slash against the world, voxels, enemy bots, barrels and donkeys. */
     traceShot(origin, direction, range) {
       const targets = [];
-      for (const bot of bots) if (!bot.isDead && bot.team !== player.team) targets.push(...bot.hitboxes);
+      for (const bot of bots) {
+        if (bot.isDead || bot.team === player.team) continue;
+        targets.push(...bot.hitboxes);
+        if (bot.isDisguised) targets.push(bot.propMesh);
+      }
       for (const remote of remotePlayers) {
         if (remote.isDead || remote.team === player.team) continue;
         if (remote.isDisguised && remote.propMesh) targets.push(remote.propMesh);
@@ -231,6 +238,8 @@ async function boot() {
     },
     damageRemotePlayer: (avatar, amount, attacker, options) => replicator.damageRemotePlayer(avatar, amount, attacker, options),
     damagePet: (amount, attacker) => pet.takeDamage(amount, attacker ? attacker.name : 'World'),
+    /** A bot shooting a donkey (authority only). Returns true when the donkey died. */
+    damageDonkey: (donkey, amount, bot) => donkeys.damage(donkey, amount, false, null, bot),
     /** Voxel damage caused on this machine — shared with everyone online. */
     damageVoxel(voxelHit, amount, byPlayer) {
       voxelWorld.damageHit(voxelHit, amount, { byPlayer });
@@ -254,6 +263,7 @@ async function boot() {
     get pointOfInterest() { return supplyDrops.pointOfInterest; },
     // Online, bots leave the K9s alone (only the host's dog would be visible to them).
     get pet() { return netState.isOnline ? null : pet; },
+    get donkeys() { return donkeys.donkeys; },
     get visibilityRange() { return weather.visibilityRange; },
     get timeScale() { return netState.isOnline ? 1 : abilities.timeScale; },
     getObjective: (bot) => flags.getObjectiveFor(bot),
@@ -262,6 +272,22 @@ async function boot() {
 
   // Explosions blast holes in voxel structures.
   events.on('explosion', ({ position, byPlayer }) => voxelWorld.explode(position, VOXEL.explosionRadius, VOXEL.explosionDamage, { byPlayer }));
+
+  // Bots that hunt a donkey get a random ability, just like the player.
+  events.on('donkey:killed', ({ killerBot }) => {
+    if (killerBot && !killerBot.isDead && netState.isAuthority) killerBot.grantAbility();
+  });
+  let lastAbilityNotice = 0;
+  events.on('bot:ability', ({ bot, id }) => {
+    if (!ABILITIES[id]) return;
+    // In big battles only nearby or allied hunters are worth a notice, and never more than one every few seconds.
+    const now = performance.now();
+    if (now - lastAbilityNotice < 4000) return;
+    if (bot.team !== player.team && bot.position.distanceTo(player.position) > 70) return;
+    lastAbilityNotice = now;
+    const isFriendly = bot.team === player.team;
+    events.emit('notify', { text: `${bot.name.toUpperCase()} ${isFriendly ? '(ALLY)' : '(ENEMY)'} GOT ${ABILITIES[id].icon} ${ABILITIES[id].name}`, tone: isFriendly ? 'info' : 'danger' });
+  });
 
   // Gunfire alerts nearby enemies — unless a crouched Ghost is shooting.
   events.on('weapon:fire', () => {
@@ -310,7 +336,11 @@ async function boot() {
     weather.reset();
     abilities.end(true);
     flags.setActive(!!mode.usesFlags);
+    if (netState.isAuthority) bots.forEach((bot, index) => bot.placeAtSpawn(index));
     player.respawn();
+    ambience.reset(MAPS[currentMapIndex].ambience || 'calm');
+    effects.setAmbientParticles(MAPS[currentMapIndex].ambience === 'war' ? 'ash' : 'dust');
+    for (const [x, z] of mapBuilder.fireSpots) effects.addEmitter({ kind: 'fire', position: new THREE.Vector3(x, 2.2, z), duration: Infinity });
     pet.spawnNear(player);
     match.start(MAPS[currentMapIndex]);
     menu.markMatchStarted();
@@ -345,7 +375,7 @@ async function boot() {
   const replicator = new Replicator({
     net, player, pet, inventory, weapons, abilities, bots, remotePlayers, match, flags, loot, supplyDrops, donkeys, hazards, weather, voxelWorld,
     createAvatar: (peer) => {
-      const spawn = SPAWN_POINTS[peer.team][0];
+      const spawn = getSpawnPoints(peer.team)[0];
       const avatar = new Bot({ name: peer.name, team: peer.team, spawn, scene, showNameTag: peer.team === player.team, isRemotePlayer: true, peerId: peer.id });
       remotePlayers.push(avatar);
       return avatar;
@@ -533,9 +563,20 @@ async function boot() {
         currentMapIndex = mapIndex;
         saveSettings({ lastMapIndex: mapIndex });
         buildWorld();
+        spawnRoster(MODES[currentModeIndex]);
+        refreshHudRoster();
       },
       onModeChange: (modeIndex) => {
         currentModeIndex = modeIndex;
+        // Warzone wants the big map: switch to it automatically (the player can still pick another).
+        const preferredMap = MODES[modeIndex].preferredMap;
+        const preferredIndex = preferredMap ? MAPS.findIndex((map) => map.id === preferredMap) : -1;
+        if (preferredIndex >= 0 && preferredIndex !== currentMapIndex) {
+          currentMapIndex = preferredIndex;
+          menu.selectMap(preferredIndex);
+          saveSettings({ lastMapIndex: preferredIndex });
+          buildWorld();
+        }
         match.setMode(modeIndex);
         spawnRoster(MODES[modeIndex]);
         refreshHudRoster();
@@ -745,6 +786,7 @@ async function boot() {
       match.update(worldDelta);
       voxelWorld.update();
       replicator.update(realDelta);
+      ambience.update(realDelta);
     }
 
     effects.getShakeOffset(shakeOffset);
@@ -793,7 +835,7 @@ async function boot() {
   window.blockfront = {
     gameRenderer, physics, voxelWorld, mapBuilder, hazards, loot, supplyDrops, donkeys, weather, flags, abilities, announcer,
     player, pet, inventory, bots, weapons, match, effects, audio, hud, menu, missionTracker, events,
-    net, netState, replicator, lobby, remotePlayers,
+    net, netState, replicator, lobby, remotePlayers, botWorld, combat, ambience,
   };
 }
 

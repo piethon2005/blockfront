@@ -3,6 +3,7 @@
 // soft shadows, procedural gradient sky, image-based lighting from that
 // sky, exponential fog, and an optional post-processing chain:
 //   RenderPass (MSAA, HDR) → GTAO ambient occlusion → Unreal bloom → OutputPass (ACES + sRGB)
+//   → cinematic grade (contrast, split-toning, vignette, lens fringing, film grain)
 // Post-processing modules are loaded dynamically so a missing addon
 // degrades gracefully to plain rendering instead of breaking the game.
 // =====================================================================
@@ -48,6 +49,72 @@ const SKY_FRAGMENT_SHADER = /* glsl */ `
     #include <colorspace_fragment>
   }
 `;
+
+// Final "film look" pass, applied in display space after tone mapping.
+const GRADE_SHADER = {
+  uniforms: {
+    tDiffuse: { value: null },
+    time: { value: 0 },
+    vignette: { value: RENDER.gradeVignette },
+    grain: { value: RENDER.gradeGrain },
+    aberration: { value: RENDER.gradeAberration },
+    saturation: { value: RENDER.gradeSaturation },
+    contrast: { value: RENDER.gradeContrast },
+    warmth: { value: RENDER.gradeWarmth },
+    shadowTint: { value: new THREE.Vector3(...RENDER.gradeShadowTint) },
+    resolution: { value: new THREE.Vector2(1920, 1080) },
+  },
+  vertexShader: /* glsl */ `
+    varying vec2 vUv;
+    void main() {
+      vUv = uv;
+      gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+    }
+  `,
+  fragmentShader: /* glsl */ `
+    uniform sampler2D tDiffuse;
+    uniform float time;
+    uniform float vignette;
+    uniform float grain;
+    uniform float aberration;
+    uniform float saturation;
+    uniform float contrast;
+    uniform float warmth;
+    uniform vec3 shadowTint;
+    uniform vec2 resolution;
+    varying vec2 vUv;
+
+    float hash(vec2 point) {
+      return fract(sin(dot(point, vec2(12.9898, 78.233))) * 43758.5453);
+    }
+
+    void main() {
+      vec2 centered = vUv - 0.5;
+      float edge = dot(centered, centered);
+      // Lens fringing that grows toward the corners.
+      vec2 fringe = centered * aberration * edge * 4.0;
+      vec3 color = vec3(
+        texture2D(tDiffuse, vUv + fringe).r,
+        texture2D(tDiffuse, vUv).g,
+        texture2D(tDiffuse, vUv - fringe).b
+      );
+      // Gentle S-curve contrast and saturation.
+      color = clamp((color - 0.5) * contrast + 0.5, 0.0, 1.0);
+      color = color * color * (3.0 - 2.0 * color) * 0.18 + color * 0.82;
+      float luma = dot(color, vec3(0.299, 0.587, 0.114));
+      color = mix(vec3(luma), color, saturation);
+      // Split toning: cool steel shadows, warm sunlit highlights.
+      color += shadowTint * (1.0 - smoothstep(0.0, 0.55, luma));
+      color += vec3(warmth, warmth * 0.45, -warmth * 0.55) * smoothstep(0.35, 1.0, luma);
+      // Vignette.
+      color *= 1.0 - vignette * smoothstep(0.12, 0.62, edge * 1.7);
+      // Animated film grain, stronger in the shadows.
+      float noise = hash(floor(vUv * resolution) + fract(time * 13.7) * 91.0) - 0.5;
+      color += noise * grain * (1.15 - luma);
+      gl_FragColor = vec4(clamp(color, 0.0, 1.0), 1.0);
+    }
+  `,
+};
 
 export class GameRenderer {
   constructor() {
@@ -182,12 +249,13 @@ export class GameRenderer {
         return null;
       }
     };
-    const [composerModule, renderPassModule, bloomModule, outputModule, aoModule] = await Promise.all([
+    const [composerModule, renderPassModule, bloomModule, outputModule, aoModule, shaderPassModule] = await Promise.all([
       importOptional('three/addons/postprocessing/EffectComposer.js'),
       importOptional('three/addons/postprocessing/RenderPass.js'),
       importOptional('three/addons/postprocessing/UnrealBloomPass.js'),
       importOptional('three/addons/postprocessing/OutputPass.js'),
       importOptional('three/addons/postprocessing/GTAOPass.js'),
+      importOptional('three/addons/postprocessing/ShaderPass.js'),
     ]);
     if (!composerModule || !renderPassModule || !outputModule) {
       this.postProcessingModules = null;
@@ -199,6 +267,7 @@ export class GameRenderer {
       OutputPass: outputModule.OutputPass,
       UnrealBloomPass: bloomModule ? bloomModule.UnrealBloomPass : null,
       GTAOPass: aoModule ? aoModule.GTAOPass : null,
+      ShaderPass: shaderPassModule ? shaderPassModule.ShaderPass : null,
     };
   }
 
@@ -238,6 +307,7 @@ export class GameRenderer {
     }
     this.bloomPass = null;
     this.ambientOcclusionPass = null;
+    this.gradePass = null;
 
     const modules = this.postProcessingModules;
     if (!preset.postProcessing || !modules) return;
@@ -278,6 +348,17 @@ export class GameRenderer {
       }
 
       this.composer.addPass(new modules.OutputPass());
+
+      if (preset.grading && modules.ShaderPass) {
+        try {
+          this.gradePass = new modules.ShaderPass(GRADE_SHADER);
+          this.gradePass.uniforms.resolution.value.set(drawingSize.x, drawingSize.y);
+          this.composer.addPass(this.gradePass);
+        } catch (error) {
+          console.warn('[renderer] grading pass unavailable:', error);
+          this.gradePass = null;
+        }
+      }
     } catch (error) {
       console.warn('[renderer] post-processing disabled:', error);
       this.composer = null;
@@ -312,6 +393,10 @@ export class GameRenderer {
       this.composer.setPixelRatio(this.webglRenderer.getPixelRatio());
       this.composer.setSize(width, height);
     }
+    if (this.gradePass && this.gradePass.uniforms) {
+      const pixelRatio = this.webglRenderer.getPixelRatio();
+      this.gradePass.uniforms.resolution.value.set(width * pixelRatio, height * pixelRatio);
+    }
   }
 
   /** Pre-compile shaders so the first seconds of a match don't stutter. */
@@ -327,7 +412,16 @@ export class GameRenderer {
     return window.innerHeight * this.webglRenderer.getPixelRatio();
   }
 
+  /** Night and storms get a moodier grade. */
+  setGradeMood({ vignette = RENDER.gradeVignette, warmth = RENDER.gradeWarmth, saturation = RENDER.gradeSaturation } = {}) {
+    if (!this.gradePass || !this.gradePass.uniforms) return;
+    this.gradePass.uniforms.vignette.value = vignette;
+    this.gradePass.uniforms.warmth.value = warmth;
+    this.gradePass.uniforms.saturation.value = saturation;
+  }
+
   render(deltaSeconds) {
+    if (this.gradePass && this.gradePass.uniforms) this.gradePass.uniforms.time.value += deltaSeconds;
     if (this.composer) this.composer.render(deltaSeconds);
     else this.webglRenderer.render(this.scene, this.camera);
   }

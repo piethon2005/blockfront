@@ -8,7 +8,7 @@
 // continuous values are pushed each frame through update().
 // =====================================================================
 
-import { BOT, CTF, LOOT, MATCH, PET, PLAYER, TEAMS, WEAPON_SLOTS } from '../config.js';
+import { BOT, CTF, getFlagPosition, LOOT, MATCH, PET, PLAYER, TEAMS, WEAPON_SLOTS } from '../config.js';
 import { events } from '../core/events.js';
 
 const getElement = (id) => document.getElementById(id);
@@ -136,7 +136,7 @@ export class Hud {
     document.getElementById('hud-chat').classList.add('is-open');
     const input = document.getElementById('hud-chat-input');
     input.value = '';
-    setTimeout(() => input.focus(), 0);
+    input.focus();
   }
 
   closeChat() {
@@ -227,13 +227,18 @@ export class Hud {
       if (name === 'You') return 'you';
       return (this.teamByName && this.teamByName.get(name)) || 'blue';
     };
-    this.elements.scoreboard.innerHTML = Object.entries(points)
-      .sort((first, second) => second[1] - first[1])
-      .map(([name, value]) => {
+    // Big battles: show the top 6 plus your own rank, not all 24 soldiers.
+    const ranked = Object.entries(points).sort((first, second) => second[1] - first[1]);
+    const ownIndex = ranked.findIndex(([name]) => name === 'You');
+    const shown = ranked.slice(0, 6).map((entry, index) => [entry, index]);
+    if (ownIndex >= 6) shown.push([ranked[ownIndex], ownIndex]);
+    const hidden = ranked.length - shown.length;
+    this.elements.scoreboard.innerHTML = shown
+      .map(([[name, value], index]) => {
         const label = name === 'You' ? this.displayName : name;
-        return `<div class="is-${teamOf(name)}"><span>${escapeHtml(label)}</span><span>${value}</span></div>`;
+        return `<div class="is-${teamOf(name)}"><span>${index + 1}. ${escapeHtml(label)}</span><span>${value}</span></div>`;
       })
-      .join('');
+      .join('') + (hidden > 0 ? `<div class="is-more"><span>+${hidden} MORE</span><span></span></div>` : '');
   }
 
   /** Rebuild the three inventory slot cards when contents or selection change. */
@@ -543,7 +548,7 @@ export class Hud {
     }
     if (state.flagStatus) {
       for (const team of ['blue', 'red']) {
-        const [flagX, flagZ] = CTF.flagPositions[team];
+        const [flagX, flagZ] = getFlagPosition(team);
         const point = toRadar(flagX, flagZ);
         if (point.distance > range) continue;
         context.fillStyle = team === 'blue' ? '#4a9cf0' : '#e0452f';

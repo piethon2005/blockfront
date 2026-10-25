@@ -19,13 +19,20 @@ sound engine.
 - **Health** — no regeneration. Press **Q** to use a med-kit (+60 HP, 1.4 s channel).
   Armor absorbs damage before health.
 - **Missions** — twelve persistent challenges with progress saved in the browser.
-- **Modes** — Kill Confirmed, Team Deathmatch, 1v1 Arena, 4v4 Team Battle and Capture the
-  Flag (steal the red flag, bring it to your flag while yours is home; first to 3).
+- **Modes** — Kill Confirmed (7v8), Team Deathmatch (7v8), 1v1 Arena, 4v4 Team Battle, Capture
+  the Flag (7v7) and **Warzone 12v12** (8-minute all-out battle, picks FRONTLINE automatically).
+- **Maps** — BRICKYARD, POXELTOWN and **FRONTLINE**: a 336 m war-torn valley with trench lines,
+  barbed wire, concrete bunkers, a shelled village with a bell-tower church, craters and burning
+  tank wrecks — all destructible. Distant artillery and fighter-jet flybys rumble overhead.
+- **Smarter bots** — every bot carries a real gun (AK-47, M4A1, SG-12 shotgun, M249, RAIL-X sniper,
+  G17, Desert Hawk, G18) held with both hands, with its own burst pattern, range, damage and sound.
+  Bots dash to dodge, hunt donkeys and use the abilities they win (Hyper-Speed, Teleport flanks,
+  Dead-Eye focus, Prop Hunt ambushes), and drop the gun they carried.
 - **Voxel destruction** — houses, cover blocks, crates, containers and fences are grids of
   destructible cells. Bullets chip them, wood is shoot-through, the M249 / RAIL-X / shotgun
   hit harder, barrels blast holes, and unsupported cells collapse.
 - **Attack pet** — K9 Razor follows you, charges visible enemies and bites (kills count as yours).
-- **Donkeys** — wander and bray; kill one for a random ability: Prop Hunt, Teleport (3 blinks),
+- **Donkeys** — a herd of 6 (9 on FRONTLINE) wander and bray; kill one for a random ability: Prop Hunt, Teleport (3 blinks),
   Hyper-Speed, or Dead-Eye slow motion. **V** uses the ability.
 - **Weather** — halfway through a match fog, a dust storm or nightfall rolls in, cutting
   visibility for everyone (bots included). **L** toggles your flashlight.
@@ -145,6 +152,7 @@ src/
     abilityManager.js       Prop Hunt, Teleport, Hyper-Speed, Dead-Eye (world time scale)
     weatherManager.js       Mid-match fog / dust storm / nightfall + flashlight
     announcer.js            Headshot, multi-kill and streak announcements
+    battleAmbience.js       Distant artillery strikes and fighter-jet flybys (cosmetic)
     effectsManager.js       GPU particles, tracers, muzzle flashes + lights, decals, debris,
                             shell casings, explosions, shockwaves, screen shake
     audioManager.js         Web Audio engine: synthesized SFX, 3D HRTF positional audio, reverb,
@@ -199,5 +207,7 @@ WASD move · Mouse aim · Left click fire / slash · Right click aim · Space ju
 R reload · 1/2/3 or mouse wheel switch slots · E pick up / swap / open supply drop ·
 G drop weapon · Q use med-kit · C crouch · V use ability · L flashlight · T chat (online) · Esc pause · Enter deploy/resume.
 
-Graphics presets (menu → GFX): LOW (no post-processing), MEDIUM (bloom, MSAA),
-ULTRA (adds GTAO ambient occlusion, 4K shadow map, dense grass).
+Graphics presets (menu → GFX): LOW (no post-processing), MEDIUM (bloom, MSAA, cinematic grade),
+ULTRA (adds GTAO ambient occlusion, 4K shadow map, dense grass). The cinematic grade adds contrast,
+split-toning, vignette, lens fringing and film grain, and shifts mood with the weather.
+On slower laptops pick MEDIUM or LOW for Warzone on FRONTLINE (23 bots).

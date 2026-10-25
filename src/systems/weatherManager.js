@@ -50,6 +50,7 @@ export class WeatherManager {
     this.rebakedAt.clear();
     this.autoFlashlightDone = false;
     this.setFlashlight(false);
+    this.gameRenderer.setGradeMood({});
   }
 
   get visibilityRange() {
@@ -77,13 +78,20 @@ export class WeatherManager {
     this.progress = 0;
     this.triggered = true;
     events.emit('weather:start', { event: this.event });
+    // Moodier film grade to match the weather.
+    const moods = {
+      night: { vignette: 0.5, warmth: -0.03, saturation: 0.82 },
+      duststorm: { vignette: 0.42, warmth: 0.075, saturation: 0.92 },
+      fog: { vignette: 0.38, warmth: 0.0, saturation: 0.84 },
+    };
+    this.gameRenderer.setGradeMood(moods[this.event.id] || {});
     events.emit('toast', { text: this.event.name, style: 'danger' });
     events.emit('notify', { text: this.event.alert, tone: 'danger' });
   }
 
   update(deltaSeconds, match) {
     if (!this.base) return;
-    const elapsedFraction = 1 - match.timeRemaining / MATCH.durationSeconds;
+    const elapsedFraction = 1 - match.timeRemaining / (match.duration || MATCH.durationSeconds);
     // Only the authority rolls the weather; guests receive it via 'weather:start'.
     if (!this.triggered && netState.isAuthority && elapsedFraction >= WEATHER.triggerAtFraction) this.start();
     if (!this.event) return;
