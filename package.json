@@ -1,0 +1,11 @@
+{
+  "name": "blockfront",
+  "version": "4.0.0",
+  "description": "BLOCKFRONT — voxel war FPS in Three.js with online multiplayer",
+  "private": true,
+  "scripts": {
+    "start": "node server/server.js",
+    "build:standalone": "python3 tools/build_standalone.py"
+  },
+  "engines": { "node": ">=18" }
+}

@@ -1,0 +1,323 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <title>BLOCKFRONT — Operation PvBots</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Black+Ops+One&family=Oswald:wght@400;500;600;700&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/styles.css">
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+    }
+  }
+  </script>
+</head>
+<body>
+
+  <!-- ============================ IN-GAME HUD ============================ -->
+  <div id="hud" class="hud-root is-hidden">
+    <div class="hud hud-timer"><small>TIME LEFT</small><span id="timer-value">05:00</span></div>
+    <div class="hud hud-supply" id="supply-tracker"></div>
+    <div class="hud hud-flags is-hidden" id="flag-status"></div>
+    <div class="hud hud-weather" id="weather-badge"></div>
+    <div class="hud announce" id="announce"><b id="announce-title"></b><small id="announce-subtitle"></small></div>
+    <div class="hud hud-ability" id="ability-panel">
+      <span class="ability-icon" id="ability-icon">?</span>
+      <div class="ability-info"><b id="ability-name">ABILITY</b><small id="ability-hint"></small><div class="ability-bar"><i id="ability-fill"></i></div></div>
+    </div>
+    <div class="hud hud-pet" id="pet-status"><span class="pet-icon"></span><div><b id="pet-name">K9 RAZOR</b><small id="pet-state">FOLLOWING</small><div class="pet-bar"><i id="pet-bar"></i></div></div></div>
+    <div class="hud hud-board" id="scoreboard"></div>
+
+    <div class="hud hud-score">
+      <div class="team team-red"><b id="score-red">0</b><small id="score-red-label">HOSTILES</small></div>
+      <div class="score-goal" id="score-goal">FIRST TO 20</div>
+      <div class="team team-blue"><b id="score-blue">0</b><small id="score-blue-label">BRAVO SQUAD</small></div>
+    </div>
+
+    <div class="hud hud-coins"><i class="coin-icon"></i><span id="coin-count">0</span></div>
+    <canvas class="hud hud-radar" id="radar" width="160" height="160"></canvas>
+    <div class="hud hud-killfeed" id="killfeed"></div>
+    <div class="hud hud-notifications" id="notifications"></div>
+
+    <div class="hud hud-vitals">
+      <div class="vitals-name"><span class="dogtag-icon"></span><span id="player-name">Player</span><span class="trait-badge" id="trait-badge"></span><span class="stance" id="stance-indicator">STAND</span></div>
+      <div class="vital-row shield-row is-empty" id="shield-row">
+        <span class="vital-label">ARMOR</span>
+        <div class="vital-bar segmented"><i id="shield-bar"></i></div>
+        <b id="shield-value">0</b>
+      </div>
+      <div class="vital-row health-row">
+        <span class="vital-label">HEALTH</span>
+        <div class="vital-bar"><i id="health-bar"></i></div>
+        <b id="health-value">100</b>
+      </div>
+    </div>
+    <div class="hud hud-medkit" id="medkit-box"><span class="key">Q</span><span class="medkit-icon"></span><b id="medkit-count">1/3</b></div>
+    <div class="hud heal-bar" id="heal-bar"><span>APPLYING MED-KIT</span><div><i id="heal-fill"></i></div></div>
+
+    <div class="hud hud-dash"><span class="key">X</span> DASH<i id="dash-bar"></i></div>
+
+    <div class="hud hud-ammo">
+      <div class="ammo-panel" id="ammo-panel">
+        <small id="weapon-name">AK-47</small>
+        <div class="ammo-numbers"><span id="ammo-current">25</span><span class="ammo-separator">/</span><span id="ammo-reserve">100</span></div>
+      </div>
+      <div class="reload-bar" id="reload-bar"><i id="reload-fill"></i></div>
+      <div class="weapon-slots" id="weapon-slots"></div>
+    </div>
+
+    <div class="hud interact-prompt" id="interact-prompt"><span class="key">E</span><span id="interact-text"></span></div>
+    <div class="hud crosshair" id="crosshair"><i></i><i></i><i></i><i></i><b></b></div>
+    <div class="hud hitmarker" id="hitmarker"><i></i><i></i><i></i><i></i></div>
+    <div class="hud toast" id="toast"></div>
+    <div class="hud damage-indicator" id="damage-indicator"><i></i></div>
+    <div class="hud hud-net is-hidden" id="hud-net"><span id="hud-net-room">ROOM -----</span><span id="hud-net-ping">-- ms</span></div>
+    <div class="hud hud-chat" id="hud-chat">
+      <div class="hud-chat-log" id="hud-chat-log"></div>
+      <form class="hud-chat-form is-hidden" id="hud-chat-form"><span>SAY:</span><input id="hud-chat-input" maxlength="200" autocomplete="off"></form>
+    </div>
+  </div>
+
+  <div id="scope-overlay" class="scope-overlay"><div class="scope-reticle"></div></div>
+  <div id="damage-vignette" class="damage-vignette"></div>
+  <div id="lowhp-vignette" class="lowhp-vignette"></div>
+  <div id="deadeye-overlay" class="deadeye-overlay"><span>DEAD-EYE</span></div>
+  <div id="speed-lines" class="speed-lines"></div>
+  <div id="disguise-overlay" class="disguise-overlay"><span id="disguise-text">DISGUISED</span></div>
+
+  <!-- ============================ MAIN MENU: COMMAND HUB ============================ -->
+  <div id="menu" class="screen menu-screen">
+    <canvas id="armory-canvas" class="armory-canvas"></canvas>
+    <div class="menu-vignette"></div>
+    <div class="menu-grain"></div>
+    <div class="menu-scanlines"></div>
+
+    <header class="menu-topbar">
+      <div class="brand">
+        <div class="logo">BLOCK<span>FRONT</span></div>
+        <div class="brand-sub">OPERATION: PVBOTS <i>//</i> SEASON 1</div>
+      </div>
+      <div class="topbar-status"><span class="status-dot"></span>SECURE CHANNEL <i>·</i> <span id="menu-clock">00:00:00</span></div>
+      <div class="topbar-stats">
+        <div><small>ELIMS</small><b id="career-kills">0</b></div>
+        <div><small>WINS</small><b id="career-wins">0</b></div>
+        <div><small>OPS</small><b id="career-matches">0</b></div>
+      </div>
+    </header>
+
+    <aside class="menu-left">
+      <section class="panel">
+        <div class="panel-title"><span>01</span>OPERATOR PROFILE</div>
+        <div class="dogtag">
+          <div class="dogtag-hole"></div>
+          <div class="dogtag-body">
+            <small>CALLSIGN</small>
+            <input id="nickname" value="PlayerOne" maxlength="12" autocomplete="off" spellcheck="false">
+            <div class="dogtag-meta" id="dogtag-meta">BRAVO SQUAD · O POS · ID 0000</div>
+          </div>
+          <div class="dogtag-chain"></div>
+        </div>
+        <div class="gender-row" id="gender-options">
+          <span>OPERATOR</span>
+          <button data-gender="male"><i class="gender-glyph">♂</i>MALE</button>
+          <button data-gender="female"><i class="gender-glyph">♀</i>FEMALE</button>
+        </div>
+        <div class="rank-row">
+          <div class="rank-chevrons" id="rank-chevrons"></div>
+          <div class="rank-info"><small>RANK</small><b id="rank-name">PRIVATE</b><div class="xp-bar"><i id="xp-fill"></i></div><small id="xp-text">0 / 10 ELIMS TO PROMOTION</small></div>
+        </div>
+      </section>
+      <nav class="panel menu-nav">
+        <button class="nav-button nav-button-mp" id="open-lobby"><span class="nav-icon">⚑</span><span>MULTIPLAYER</span><small>PLAY WITH FRIENDS</small></button>
+        <button class="nav-button" data-modal="missions"><span class="nav-icon">◎</span><span>MISSIONS</span><small id="missions-badge">0/8</small></button>
+        <button class="nav-button" data-modal="manual"><span class="nav-icon">▤</span><span>FIELD MANUAL</span><small>CONTROLS</small></button>
+        <button class="nav-button" data-modal="credits"><span class="nav-icon">✦</span><span>CREDITS</span><small>ABOUT</small></button>
+      </nav>
+    </aside>
+
+    <aside class="menu-right">
+      <section class="panel briefing-panel">
+        <div class="panel-title"><span>02</span>OPERATION BRIEFING</div>
+        <div class="brief-label">AREA OF OPERATIONS</div>
+        <div class="map-cards" id="map-options"></div>
+        <div class="brief-label">MISSION TYPE</div>
+        <div class="mode-cards" id="mode-options"></div>
+        <p class="brief-text" id="brief-text"></p>
+        <div class="brief-label">VISUAL FIDELITY</div>
+        <div class="segmented-control" id="quality-options">
+          <button data-quality="low">LOW</button><button data-quality="medium">MEDIUM</button><button data-quality="high">ULTRA</button>
+        </div>
+      </section>
+    </aside>
+
+    <section class="menu-bottom">
+      <div class="loadout-strip">
+        <div class="panel-title compact"><span>03</span>ACTIVE LOADOUT</div>
+        <div class="loadout-cards" id="loadout-strip"></div>
+        <button class="loadout-open" id="open-loadout">⚙ ENTER LOADOUT ROOM</button>
+      </div>
+      <button id="play-button" class="deploy-button">
+        <span class="deploy-hazard"></span>
+        <span class="deploy-label">DEPLOY</span>
+        <small>INSERT SQUAD INTO AO</small>
+      </button>
+    </section>
+  </div>
+
+  <!-- ============================ MULTIPLAYER WAR ROOM ============================ -->
+  <div id="lobby" class="lobby is-hidden">
+    <div class="lobby-grain"></div>
+    <header class="lobby-header">
+      <div><small>JOINT OPERATIONS // SECURE CHANNEL</small><h2>WAR ROOM</h2></div>
+      <div class="lobby-link" id="lobby-link"><i></i><span id="lobby-link-text">OFFLINE</span></div>
+      <button class="lobby-close" id="lobby-close" aria-label="Close">✕</button>
+    </header>
+
+    <!-- Step 1: connect, create or join -->
+    <section class="lobby-connect" id="lobby-connect">
+      <div class="panel lobby-card">
+        <div class="panel-title"><span>01</span>FIELD RADIO</div>
+        <label class="lobby-label" for="lobby-server">SERVER ADDRESS</label>
+        <input id="lobby-server" class="lobby-input" spellcheck="false" autocomplete="off" placeholder="your-game.onrender.com">
+        <p class="lobby-help">Same link as the game? Leave it. Friends on a hosted server: paste its address (e.g. <code>blockfront-xyz.onrender.com</code>).</p>
+        <label class="lobby-label" for="lobby-callsign">CALLSIGN</label>
+        <input id="lobby-callsign" class="lobby-input" maxlength="12" spellcheck="false" autocomplete="off">
+      </div>
+      <div class="panel lobby-card">
+        <div class="panel-title"><span>02</span>FORM A SQUAD</div>
+        <button class="primary-btn lobby-big" id="lobby-create">⚑ CREATE ROOM</button>
+        <div class="lobby-or"><span>OR JOIN WITH A CODE</span></div>
+        <div class="lobby-join-row">
+          <input id="lobby-code" class="lobby-input lobby-code-input" maxlength="5" spellcheck="false" autocomplete="off" placeholder="CODE">
+          <button class="secondary-btn" id="lobby-join">JOIN ▸</button>
+        </div>
+        <p class="lobby-status" id="lobby-status"></p>
+      </div>
+    </section>
+
+    <!-- Step 2: in a room -->
+    <section class="lobby-room is-hidden" id="lobby-room">
+      <div class="lobby-room-top">
+        <div class="lobby-code-box"><small>ROOM CODE — SEND THIS TO YOUR SQUAD</small><b id="lobby-room-code">-----</b><button class="secondary-btn" id="lobby-copy">COPY INVITE</button></div>
+        <div class="lobby-phase" id="lobby-phase">ASSEMBLING</div>
+      </div>
+      <div class="lobby-grid">
+        <div class="panel lobby-teams">
+          <div class="panel-title"><span>01</span>ROSTER</div>
+          <div class="lobby-team-columns">
+            <div class="lobby-team blue"><h4>BLUE · BRAVO</h4><ul id="lobby-team-blue"></ul></div>
+            <div class="lobby-team red"><h4>RED · HOSTILE</h4><ul id="lobby-team-red"></ul></div>
+          </div>
+          <div class="lobby-actions">
+            <button class="secondary-btn" id="lobby-switch-team">⇄ SWITCH TEAM</button>
+            <button class="secondary-btn" id="lobby-ready">READY</button>
+          </div>
+        </div>
+        <div class="panel lobby-settings">
+          <div class="panel-title"><span>02</span>OPERATION <em id="lobby-host-note">(HOST CONTROLS)</em></div>
+          <label class="lobby-label">AREA OF OPERATIONS</label>
+          <select id="lobby-map" class="lobby-input"></select>
+          <label class="lobby-label">MISSION TYPE</label>
+          <select id="lobby-mode" class="lobby-input"></select>
+          <label class="lobby-check"><input type="checkbox" id="lobby-bots"> FILL EMPTY SLOTS WITH BOTS</label>
+          <label class="lobby-check"><input type="checkbox" id="lobby-coop"> CO-OP: ALL HUMANS VS BOTS</label>
+          <p class="lobby-help" id="lobby-mode-help"></p>
+        </div>
+        <div class="panel lobby-chat">
+          <div class="panel-title"><span>03</span>COMMS</div>
+          <div class="lobby-chat-log" id="lobby-chat-log"></div>
+          <form class="lobby-chat-form" id="lobby-chat-form"><input id="lobby-chat-input" class="lobby-input" maxlength="200" autocomplete="off" placeholder="Type a message…"><button class="secondary-btn">SEND</button></form>
+        </div>
+      </div>
+      <footer class="lobby-footer">
+        <button class="secondary-btn" id="lobby-leave">◂ LEAVE ROOM</button>
+        <button class="deploy-button lobby-start" id="lobby-start"><span class="deploy-hazard"></span><span class="deploy-label">START OP</span><small id="lobby-start-note">HOST LAUNCHES THE MATCH</small></button>
+      </footer>
+    </section>
+  </div>
+
+  <!-- ============================ LOADOUT ROOM ============================ -->
+  <div id="loadout-room" class="loadout-room is-hidden">
+    <header class="loadout-header">
+      <div><small>ARMORY // QUARTERMASTER</small><h2>LOADOUT ROOM</h2></div>
+      <p>Choose one weapon per slot and one passive trait. <b class="elite-text">★ Elite weapons</b> are only found in supply drops.</p>
+    </header>
+    <div class="loadout-columns" id="loadout-columns"></div>
+    <footer class="loadout-footer">
+      <button class="secondary-btn" id="loadout-reset">RESET TO STANDARD ISSUE</button>
+      <button class="primary-btn" id="loadout-confirm">CONFIRM LOADOUT</button>
+    </footer>
+  </div>
+
+  <!-- ============================ MODAL ============================ -->
+  <div id="modal" class="modal is-hidden">
+    <div class="modal-card">
+      <div class="modal-header"><div><small id="modal-kicker">CLASSIFIED</small><h3 id="modal-title">TITLE</h3></div><button id="modal-close" aria-label="Close">✕</button></div>
+      <div class="modal-body" id="modal-body"></div>
+    </div>
+  </div>
+
+  <!-- ============================ LOADING ============================ -->
+  <div id="loading" class="screen loading-screen is-hidden">
+    <div class="loading-card">
+      <small>INSERTION IN PROGRESS</small>
+      <h2 id="loading-title">OP. IRON YARD</h2>
+      <p id="loading-briefing"></p>
+      <div class="loading-bar"><i id="loading-fill"></i></div>
+      <p class="loading-tip" id="loading-tip">Get ready.</p>
+    </div>
+  </div>
+
+  <!-- ============================ PAUSE / DEPLOY ============================ -->
+  <div id="pause-overlay" class="pause-overlay is-hidden">
+    <div class="pause-card">
+      <small class="pause-kicker" id="pause-kicker">SQUAD READY</small>
+      <h1>BLOCK<span>FRONT</span></h1>
+      <p>You and 2 allies (blue) face 4 hostile bots (red). Click <b>DEPLOY</b> to begin.</p>
+      <p class="controls">WASD move · Mouse aim · Click fire · RMB aim · Space jump · C crouch · X dash · R reload · 1/2/3 slots · E pick up · G drop · Q med-kit · V ability · L flashlight</p>
+      <p id="mode-description">Kill Confirmed: kill an enemy, then grab the dropped red tag for +1. Blue tags are your team's: grab them to deny the enemy.</p>
+      <p class="controls">No health regen — find <b>med-kits</b> and <b>armor</b>. Watch for <b>red smoke</b>: supply drops carry elite weapons. Hunt <b>donkeys</b> for random abilities. Everything is <b>destructible</b>.</p>
+
+      <div class="settings">
+        <label>MASTER <input type="range" id="volume-master" min="0" max="1" step="0.01"></label>
+        <label>MUSIC <input type="range" id="volume-music" min="0" max="1" step="0.01"></label>
+        <label>SFX <input type="range" id="volume-sfx" min="0" max="1" step="0.01"></label>
+        <label>SENSITIVITY <input type="range" id="mouse-sensitivity" min="0.3" max="2.5" step="0.05"></label>
+      </div>
+
+      <button id="deploy-button" class="primary-btn">DEPLOY</button>
+      <button id="new-match-button" class="secondary-btn is-hidden">ABORT · RETURN TO HQ</button>
+      <p class="pause-online-note is-hidden" id="pause-online-note">ONLINE MATCH — THE BATTLE CONTINUES WHILE THIS MENU IS OPEN. PRESS <b>T</b> IN-GAME TO CHAT.</p>
+    </div>
+  </div>
+
+  <!-- ============================ MATCH END ============================ -->
+  <div id="end-screen" class="screen end-screen is-hidden">
+    <small class="end-kicker">AFTER-ACTION REPORT</small>
+    <h1 id="end-title">VICTORY</h1>
+    <div class="end-stats" id="end-stats"></div>
+    <button id="play-again-button" class="primary-btn">RETURN TO HQ</button>
+  </div>
+
+  <div id="fatal-error" class="fatal-error is-hidden"></div>
+
+  <script type="module" src="src/main.js"></script>
+  <script>
+    // Watchdog: if the module graph never boots (opened via file://, CDN blocked), explain why.
+    setTimeout(function () {
+      if (window.__blockfrontBooted) return;
+      var panel = document.getElementById('fatal-error');
+      var viaFile = location.protocol === 'file:';
+      panel.innerHTML = '<div><b>BLOCKFRONT could not start.</b><br>' + (viaFile
+        ? 'Browsers block ES modules on file:// pages. Run a local server in this folder, e.g.<br><code>python -m http.server 8000</code> then open <code>http://localhost:8000</code>,<br>or open <code>blockfront-standalone.html</code> instead.'
+        : 'The 3D library could not be loaded. Check your internet connection and reload.') + '</div>';
+      panel.classList.remove('is-hidden');
+    }, 9000);
+  </script>
+</body>
+</html>

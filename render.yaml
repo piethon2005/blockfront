@@ -1,0 +1,9 @@
+# Render.com Blueprint — New → Blueprint → pick this repository.
+services:
+  - type: web
+    name: blockfront
+    runtime: node
+    plan: free
+    buildCommand: "echo 'no build step'"
+    startCommand: npm start
+    healthCheckPath: /health
