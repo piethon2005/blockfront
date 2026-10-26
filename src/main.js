@@ -1,5 +1,5 @@
 // =====================================================================
-// BLOCKFRONT — entry point.
+// BATLZON — entry point.
 // Boots every system, owns the game-state machine
 // (menu → loading → ready → playing ⇄ paused → ended), routes input,
 // wires combat (bullets, voxels, donkeys, pet), loot, supply drops,
@@ -67,7 +67,7 @@ const input = {
 };
 
 async function boot() {
-  window.__blockfrontBooted = true;
+  window.__batlzonBooted = true;
 
   // ------------------------------------------------------------------ core systems
   const gameRenderer = new GameRenderer();
@@ -832,7 +832,7 @@ async function boot() {
   requestAnimationFrame(frame);
 
   // Exposed for debugging in the browser console.
-  window.blockfront = {
+  window.batlzon = {
     gameRenderer, physics, voxelWorld, mapBuilder, hazards, loot, supplyDrops, donkeys, weather, flags, abilities, announcer,
     player, pet, inventory, bots, weapons, match, effects, audio, hud, menu, missionTracker, events,
     net, netState, replicator, lobby, remotePlayers, botWorld, combat, ambience,
@@ -842,6 +842,6 @@ async function boot() {
 boot().catch((error) => {
   console.error(error);
   const panel = document.getElementById('fatal-error');
-  panel.innerHTML = `<div><b>BLOCKFRONT failed to start.</b><br>${String(error && error.message ? error.message : error)}<br><small>Serve the folder over http (see README) and check the browser console.</small></div>`;
+  panel.innerHTML = `<div><b>BATLZON failed to start.</b><br>${String(error && error.message ? error.message : error)}<br><small>Serve the folder over http (see README) and check the browser console.</small></div>`;
   panel.classList.remove('is-hidden');
 });

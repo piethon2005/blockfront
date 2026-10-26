@@ -432,7 +432,7 @@ export class Menu {
     } else {
       modalKicker.textContent = 'PERSONNEL FILE';
       modalTitle.textContent = 'CREDITS';
-      modalBody.innerHTML = '<div class="credits-logo">BLOCK<span>FRONT</span></div>'
+      modalBody.innerHTML = '<div class="credits-logo">BATL<span>ZON</span></div>'
         + CREDITS.map(([heading, text]) => `<div class="manual-row"><b>${heading}</b><span>${text}</span></div>`).join('');
     }
     modal.classList.remove('is-hidden');

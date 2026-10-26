@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """
-Bundle the modular BLOCKFRONT project into ONE html file that runs by
+Bundle the modular BATLZON project into ONE html file that runs by
 double-clicking (no local server needed). Three.js still loads from the CDN.
 
 Usage (from the project root):
     python tools/build_standalone.py
 Output:
-    blockfront-standalone.html
+    batlzon-standalone.html
 
 How it works: every local ES module is wrapped in its own function scope,
 its `export`s are returned as an object, and its local `import { ... }`
@@ -106,7 +106,7 @@ def main():
         raise SystemExit("Could not find the main module script tag in index.html")
     html = html.replace(module_tag, '<script type="module">\n' + bundle.replace("</script>", "<\\/script>") + "\n</script>")
 
-    output_path = os.path.join(ROOT, "blockfront-standalone.html")
+    output_path = os.path.join(ROOT, "batlzon-standalone.html")
     with open(output_path, "w", encoding="utf-8") as handle:
         handle.write(html)
     print(f"Wrote {output_path} ({len(html) // 1024} KB, {len(order)} modules)")

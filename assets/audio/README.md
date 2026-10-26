@@ -1,6 +1,6 @@
 # Custom audio (optional)
 
-BLOCKFRONT synthesizes every sound in real time, so this folder can stay empty.
+BATLZON synthesizes every sound in real time, so this folder can stay empty.
 
 To use your own recordings, drop `.wav`, `.mp3` or `.ogg` files here and map them in
 `src/config.js` → `AUDIO_SAMPLES`, for example:

@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-  <title>BLOCKFRONT — Operation PvBots</title>
+  <title>BATLZON — Operation PvBots</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Black+Ops+One&family=Oswald:wght@400;500;600;700&family=Share+Tech+Mono&display=swap" rel="stylesheet">
@@ -99,7 +99,7 @@
 
     <header class="menu-topbar">
       <div class="brand">
-        <div class="logo">BLOCK<span>FRONT</span></div>
+        <div class="logo">BATL<span>ZON</span></div>
         <div class="brand-sub">OPERATION: PVBOTS <i>//</i> SEASON 1</div>
       </div>
       <div class="topbar-status"><span class="status-dot"></span>SECURE CHANNEL <i>·</i> <span id="menu-clock">00:00:00</span></div>
@@ -184,7 +184,7 @@
         <div class="panel-title"><span>01</span>FIELD RADIO</div>
         <label class="lobby-label" for="lobby-server">SERVER ADDRESS</label>
         <input id="lobby-server" class="lobby-input" spellcheck="false" autocomplete="off" placeholder="your-game.onrender.com">
-        <p class="lobby-help">Same link as the game? Leave it. Friends on a hosted server: paste its address (e.g. <code>blockfront-xyz.onrender.com</code>).</p>
+        <p class="lobby-help">Same link as the game? Leave it. Friends on a hosted server: paste its address (e.g. <code>batlzon-xyz.onrender.com</code>).</p>
         <label class="lobby-label" for="lobby-callsign">CALLSIGN</label>
         <input id="lobby-callsign" class="lobby-input" maxlength="12" spellcheck="false" autocomplete="off">
       </div>
@@ -277,7 +277,7 @@
   <div id="pause-overlay" class="pause-overlay is-hidden">
     <div class="pause-card">
       <small class="pause-kicker" id="pause-kicker">SQUAD READY</small>
-      <h1>BLOCK<span>FRONT</span></h1>
+      <h1>BATL<span>ZON</span></h1>
       <p>Your squad (blue) faces the hostile army (red). Click <b>DEPLOY</b> to begin.</p>
       <p class="controls">WASD move · Mouse aim · Click fire · RMB aim · Space jump · C crouch · X dash · R reload · 1/2/3 slots · E pick up · G drop · Q med-kit · V ability · L flashlight</p>
       <p id="mode-description">Kill Confirmed: kill an enemy, then grab the dropped red tag for +1. Blue tags are your team's: grab them to deny the enemy.</p>
@@ -310,11 +310,11 @@
   <script>
     // Watchdog: if the module graph never boots (opened via file://, CDN blocked), explain why.
     setTimeout(function () {
-      if (window.__blockfrontBooted) return;
+      if (window.__batlzonBooted) return;
       var panel = document.getElementById('fatal-error');
       var viaFile = location.protocol === 'file:';
-      panel.innerHTML = '<div><b>BLOCKFRONT could not start.</b><br>' + (viaFile
-        ? 'Browsers block ES modules on file:// pages. Run a local server in this folder, e.g.<br><code>python -m http.server 8000</code> then open <code>http://localhost:8000</code>,<br>or open <code>blockfront-standalone.html</code> instead.'
+      panel.innerHTML = '<div><b>BATLZON could not start.</b><br>' + (viaFile
+        ? 'Browsers block ES modules on file:// pages. Run a local server in this folder, e.g.<br><code>python -m http.server 8000</code> then open <code>http://localhost:8000</code>,<br>or open <code>batlzon-standalone.html</code> instead.'
         : 'The 3D library could not be loaded. Check your internet connection and reload.') + '</div>';
       panel.classList.remove('is-hidden');
     }, 9000);

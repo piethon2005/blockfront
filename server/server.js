@@ -1,5 +1,5 @@
 // =====================================================================
-// BLOCKFRONT multiplayer server — zero dependencies (Node 18+).
+// BATLZON multiplayer server — zero dependencies (Node 18+).
 //
 //   node server/server.js            → http://localhost:8080
 //   PORT=3000 node server/server.js
@@ -414,5 +414,5 @@ setInterval(() => {
 }, HEARTBEAT_INTERVAL_MS);
 
 server.listen(PORT, () => {
-  console.log(`BLOCKFRONT server running → http://localhost:${PORT}  (WebSocket: ws://localhost:${PORT}/ws)`);
+  console.log(`BATLZON server running → http://localhost:${PORT}  (WebSocket: ws://localhost:${PORT}/ws)`);
 });

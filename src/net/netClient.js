@@ -1,5 +1,5 @@
 // =====================================================================
-// NetClient — WebSocket connection to the BLOCKFRONT server.
+// NetClient — WebSocket connection to the BATLZON server.
 // Handles lobby messages (create / join / team / ready / settings /
 // chat / start) and the in-match relay. Everything the server sends is
 // re-emitted on the event bus as `net:<type>` so UI and game code stay

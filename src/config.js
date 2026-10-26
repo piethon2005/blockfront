@@ -1,5 +1,5 @@
 // =====================================================================
-// BLOCKFRONT — central configuration.
+// BATLZON — central configuration.
 // Every tunable number in the game lives here so balance changes,
 // new weapons, new maps and new modes never require touching logic.
 // =====================================================================
@@ -560,4 +560,4 @@ export const CREDITS = [
   ['ART', 'Procedural PBR textures, voxel models, GPU particles'],
 ];
 
-export const STORAGE_KEY = 'blockfront.settings.v1';
+export const STORAGE_KEY = 'blockfront.settings.v1';   // kept from the old name so saved progress survives the rename

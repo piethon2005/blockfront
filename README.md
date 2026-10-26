@@ -1,4 +1,4 @@
-# BLOCKFRONT — modular Three.js FPS
+# BATLZON — modular Three.js FPS
 
 Blocky team shooter (solo vs bots, or **online with up to 8 friends**) with a war-room command hub,
 pre-game loadouts, slot-based inventory with weapon dropping, world loot, timed supply
@@ -69,7 +69,7 @@ applied by the victim's browser. See `src/net/replicator.js` for the details.
 2. On [render.com](https://render.com) → **New → Web Service** → pick the repo.
    Runtime **Node**, build command *(leave empty)*, start command `npm start`, plan **Free**.
    (Or **New → Blueprint** and Render reads the included `render.yaml`.)
-3. Open the URL Render gives you (e.g. `https://blockfront-xyz.onrender.com`) and share it.
+3. Open the URL Render gives you (e.g. `https://batlzon-xyz.onrender.com`) and share it.
    The War Room connects to the same address automatically.
 
 Free instances sleep after ~15 minutes without visitors; the first connection then takes
@@ -79,7 +79,7 @@ way (Railway, Fly.io, a VPS): run `npm start`, it listens on `$PORT` (default 80
 ### Option B — host from your own computer
 
 ```bash
-cd blockfront
+cd batlzon
 node server/server.js        # needs Node 18+, no npm install required
 ```
 
@@ -92,8 +92,8 @@ then everyone opens the public URL it prints.
 
 - The host's tab runs the bots: keep it in the foreground (browsers freeze background tabs,
   which pauses the world for everybody).
-- `blockfront-standalone.html` opened as a file can still join: type the server address
-  (e.g. `blockfront-xyz.onrender.com`) in **SERVER ADDRESS**.
+- `batlzon-standalone.html` opened as a file can still join: type the server address
+  (e.g. `batlzon-xyz.onrender.com`) in **SERVER ADDRESS**.
 - `GET /health` returns room and player counts.
 
 ## Running it
@@ -101,10 +101,10 @@ then everyone opens the public URL it prints.
 Easiest: `node server/server.js` and open http://localhost:8080 (also enables multiplayer).
 ES modules do not load from `file://`, so otherwise either:
 
-- **Double-click `blockfront-standalone.html`** — everything bundled in one file (needs internet for Three.js), or
+- **Double-click `batlzon-standalone.html`** — everything bundled in one file (needs internet for Three.js), or
 - **Serve the folder** (recommended while developing):
   ```bash
-  cd blockfront
+  cd batlzon
   python -m http.server 8000      # then open http://localhost:8000
   # or: npx serve .   /  VS Code "Live Server"
   ```
@@ -170,7 +170,7 @@ src/
                             snapshots, world events, shared voxel destruction, guest requests
 server/server.js            Zero-dependency Node server: static files + WebSocket rooms/lobby/relay
 render.yaml                 One-click Render.com deploy (Blueprint)
-tools/build_standalone.py   Bundles everything into blockfront-standalone.html
+tools/build_standalone.py   Bundles everything into batlzon-standalone.html
 assets/audio/               Drop-in folder for your own recorded sounds (optional)
 ```
 

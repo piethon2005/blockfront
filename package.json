@@ -1,7 +1,7 @@
 {
-  "name": "blockfront",
+  "name": "batlzon",
   "version": "4.0.0",
-  "description": "BLOCKFRONT — voxel war FPS in Three.js with online multiplayer",
+  "description": "BATLZON — voxel war FPS in Three.js with online multiplayer",
   "private": true,
   "scripts": {
     "start": "node server/server.js",
